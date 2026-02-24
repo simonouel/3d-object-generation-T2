@@ -106,12 +106,12 @@ def create_image_gallery():
 
         def shift_card_ui(gallery_data):
             """Update the UI to reflect the current gallery data state."""
-            print(f"Updating gallery UI with {len(gallery_data)} objects")
+            import time
+            start_time = time.time()
             updates = []
             for idx in range(MAX_CARDS):
                 if idx < len(gallery_data):
                     obj = gallery_data[idx]
-                    print(f"  Card {idx}: {obj['title']} -> {obj['path']}")
                     
                     updates.append(gr.update(value=f"### {obj['title']}"))
                     
@@ -183,6 +183,11 @@ def create_image_gallery():
                         button_text = "→ 3D"
                         button_interactive = False
                         button_classes = ["action-btn", "disabled-btn"]
+                    elif is_3d_generation_global:
+                        # Disable all 3D buttons when any 3D generation is in progress
+                        button_text = "→ 3D"
+                        button_interactive = False
+                        button_classes = ["action-btn", "disabled-btn"]
                     else:
                         button_text = "→ 3D"
                         button_interactive = True
@@ -234,9 +239,15 @@ def create_image_gallery():
                 gallery_data[idx].get("3d_generating", False)
                 for idx in range(len(gallery_data))
             )
+
+            any_3d_generation_global = any(
+                idx < len(gallery_data) and 
+                gallery_data[idx].get("3d_generation_global", False)
+                for idx in range(len(gallery_data))
+            )
             
             show_convert_all = has_items
-            enable_convert_all = has_unconverted_items and not is_batch_processing and not any_image_generating and not any_3d_generating
+            enable_convert_all = has_unconverted_items and not is_batch_processing and not any_image_generating and not any_3d_generating and not any_3d_generation_global
             
             # Set button text based on processing state
             if is_batch_processing:
@@ -246,7 +257,8 @@ def create_image_gallery():
             
             updates.append(gr.update(visible=show_convert_all, interactive=enable_convert_all, value=convert_all_text))
             
-            print(f"Gallery UI updated with {len(gallery_data)} visible cards")
+            elapsed = time.time() - start_time
+            print(f"Gallery UI updated with {len(gallery_data)} visible cards (took {elapsed:.3f}s)")
             return updates
         
         # Note: Delete button events are handled in the main app to enable export section updates

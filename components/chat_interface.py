@@ -19,6 +19,11 @@
 """Chat interface component for LLM agent interaction."""
 
 import gradio as gr
+import config
+
+# Only import GPU manager for native models
+if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+    from services.gpu_memory_manager import get_gpu_memory_manager
 
 
 def create_chat_interface():
@@ -39,6 +44,13 @@ def create_chat_interface():
             with gr.Column(scale=1, min_width=50):
                 send_btn = gr.Button("▶", elem_classes=["send-button"], size="sm")
         
+        # Progress bar for object/prompt generation
+        progress_html = gr.HTML(
+            value="",
+            visible=False,
+            elem_classes=["generation-progress"]
+        )
+        
         # Tip component for non-scene inputs
         tip_component = gr.HTML(
             value="",
@@ -50,6 +62,7 @@ def create_chat_interface():
         "section": chat_section,
         "input": scene_input,
         "send_btn": send_btn,
+        "progress": progress_html,
         "tip": tip_component
     }
 
@@ -66,6 +79,11 @@ def handle_scene_description(scene_description, agent_service, gallery_data, ima
         return "Please enter a scene description.", gallery_data, tip_html, True
     
     try:
+        # Prepare GPU for LLM inference (moves other models to CPU)
+        if config.USE_NATIVE_LLM:
+            gpu_manager = get_gpu_memory_manager()
+            gpu_manager.prepare_for_llm()
+        
         # First, classify the input
         classification, tip_message = agent_service.classify_input(scene_description)
         
@@ -110,6 +128,12 @@ def handle_scene_description(scene_description, agent_service, gallery_data, ima
             # Automatically generate images if image generation service is available
             if image_generation_service:
                 print("Generating images for all objects...")
+                
+                # Prepare GPU for SANA (moves LLM to CPU)
+                if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+                    gpu_manager = get_gpu_memory_manager()
+                    gpu_manager.prepare_for_sana()
+                
                 try:
                     success, message, generated_images = image_generation_service.generate_images_for_objects(new_gallery_data)
                     
@@ -124,6 +148,20 @@ def handle_scene_description(scene_description, agent_service, gallery_data, ima
                                 print(f"No image generated for {object_name}")
                     else:
                         print(f"Image generation failed: {message}")
+                    
+                    # Move SANA to CPU after image generation to free GPU memory
+                    # This prevents system slowdown when Gradio displays images
+                    print("Moving SANA to CPU after image generation...")
+                    image_generation_service.move_sana_pipeline_to_cpu()
+                    
+                    # Ensure GPU operations complete before Gradio displays images
+                    import torch
+                    import gc
+                    if torch.cuda.is_available():
+                        # Note: Removed synchronize() - it blocks system-wide
+                        torch.cuda.empty_cache()
+                        gc.collect()
+                    print("GPU memory cleared, ready for image display")
                         
                 except Exception as e:
                     print(f"Error during image generation: {str(e)}")

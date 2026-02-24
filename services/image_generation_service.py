@@ -62,20 +62,29 @@ class ImageGenerationService:
             
             logger.info(f"Moving SANA pipeline to {device}")
 
-
             if self.device == device:
                 logger.info(f"SANA pipeline is already on {device}")
-                return True
+            else:
+                # Move pipeline to specified device
+                self.sana_pipeline.to(device)
+                self.device = device
+                logger.info(f"Successfully moved SANA pipeline to {device}")
             
-            # Move pipeline to specified device
-            self.sana_pipeline.to(device)
-            self.device = device
+            # Note: Guardrail model always stays on CPU (small model, fast enough on CPU)
+            # This avoids device movement issues and saves GPU memory
             
             # Clear GPU memory after moving to CPU
             if device == "cpu":
+                # Clear any cached prompt embeddings in the pipeline components
+                if hasattr(self.sana_pipeline, 'text_encoder') and self.sana_pipeline.text_encoder is not None:
+                    if hasattr(self.sana_pipeline.text_encoder, '_hf_hook'):
+                        # Clear offload hooks if any
+                        pass
+                
+                # Force garbage collection before clearing cache
+                gc.collect()
                 self._clear_gpu_memory()
             
-            logger.info(f"Successfully moved SANA pipeline to {device}")
             return True
             
         except Exception as e:
@@ -83,12 +92,34 @@ class ImageGenerationService:
             return False
     
     def move_sana_pipeline_to_gpu(self):
-        """Move SANA pipeline to GPU."""
+        """Move SANA pipeline and guardrail to GPU."""
         return self.move_sana_pipeline_to_device("cuda:0")
     
     def move_sana_pipeline_to_cpu(self):
-        """Move SANA pipeline to CPU."""
+        """Move SANA pipeline and guardrail to CPU."""
         return self.move_sana_pipeline_to_device("cpu")
+    
+    def unload_sana_model(self):
+        """Completely unload SANA pipeline to free all memory (GPU and CPU).
+        
+        Use this in RAM_RESTRICTED mode to save system memory.
+        The model will need to be reloaded before next use.
+        """
+        if self.sana_pipeline is not None:
+            logger.info("Unloading SANA pipeline completely...")
+            del self.sana_pipeline
+            self.sana_pipeline = None
+            self.is_loaded = False
+            
+            # Also unload guardrail if present
+            if self.guardrail_service:
+                self.guardrail_service.unload_model()
+            
+            # Clear memory
+            self._clear_gpu_memory()
+            logger.info("SANA pipeline unloaded")
+            return True
+        return False
     
     def load_sana_model(self, device="cuda:0", force_reload=False):
         """Load the SANA model for image generation with optimizations."""
@@ -186,11 +217,26 @@ class ImageGenerationService:
             
             # Generate image - SCM requires num_inference_steps=2
             with torch.no_grad():  # Reduce memory usage during inference
-                image = self.sana_pipeline(
+                # Create generator on CUDA - will be cleaned up explicitly
+                generator = torch.Generator("cuda").manual_seed(seed)
+                
+                # Store full output to explicitly clean it up
+                output = self.sana_pipeline(
                     prompt=prompt,
                     num_inference_steps=2,  # SCM requirement
-                    generator=torch.Generator("cuda").manual_seed(seed)
-                ).images[0]
+                    generator=generator
+                )
+                # Extract the image (PIL format)
+                image = output.images[0]
+                
+                # Explicitly delete the output object and generator to free GPU tensors
+                del output
+                del generator
+                
+                # Force garbage collection and clear GPU cache immediately after generation
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             
             # Create output directory if it doesn't exist
             os.makedirs(output_dir, exist_ok=True)
@@ -255,8 +301,86 @@ class ImageGenerationService:
             if content_filtered_objects:
                 logger.warning(f"Content filtered objects: {content_filtered_objects}")
             
+            # Ensure all CUDA operations are complete before returning to Gradio
+            # Clear GPU cache (removed synchronize - it blocks system-wide)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                gc.collect()
+            
             return True, f"Generated {len(generated_images)} images, {len(content_filtered_objects)} content filtered", generated_images
             
         except Exception as e:
             logger.error(f"Error generating images for objects: {e}")
-            return False, f"Error generating images: {str(e)}", {} 
+            # Clear cache on error path (removed synchronize - it blocks system-wide)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            return False, f"Error generating images: {str(e)}", {}
+    
+    def generate_images_for_objects_with_progress(self, objects_data, output_dir="static/images/generated"):
+        """Generate images for all objects with progress updates (generator).
+        
+        Yields after each image is generated so the UI can update progressively.
+        During generation, keeps image_generating=True so buttons stay disabled.
+        Only sets image_generating=False on final yield when all images are complete.
+        
+        Yields:
+            tuple: (current_idx, total, object_name, updated_objects_data, is_complete)
+        """
+        try:
+            if not self.load_sana_model():
+                yield (0, len(objects_data), "Failed to load model", objects_data, True)
+                return
+            
+            # Create output directory
+            os.makedirs(output_dir, exist_ok=True)
+            
+            total = len(objects_data)
+            content_filtered_objects = []
+            
+            for idx, obj in enumerate(objects_data):
+                object_name = obj["title"]
+                prompt = obj["description"]
+                
+                logger.info(f"Generating image {idx+1}/{total}: {object_name}")
+                success, message, image_path = self.generate_image_from_prompt(
+                    object_name, prompt, output_dir
+                )
+                
+                if success and image_path:
+                    objects_data[idx]["path"] = image_path
+                    # Keep image_generating=True during progress - buttons stay disabled
+                    # Clear any previous failure flags
+                    objects_data[idx] = clear_image_generation_failure_flags(objects_data[idx])
+                    logger.info(f"Generated image for {object_name}: {image_path}")
+                elif message == "PROMPT_CONTENT_FILTERED":
+                    objects_data[idx]["path"] = "static/images/content_filtered.svg"
+                    objects_data[idx]["prompt_content_filtered"] = True
+                    objects_data[idx]["prompt_content_filtered_timestamp"] = datetime.datetime.now().isoformat()
+                    content_filtered_objects.append(object_name)
+                    logger.warning(f"2D prompt content filtered for {object_name}")
+                else:
+                    objects_data[idx]["image_generation_failed"] = True
+                    objects_data[idx]["image_generation_error"] = message
+                    logger.error(f"Failed to generate image for {object_name}: {message}")
+                
+                # Yield progress after each image (buttons still disabled)
+                yield (idx + 1, total, object_name, objects_data.copy(), False)
+            
+            # Final yield - NOW set image_generating=False for all to enable buttons
+            for obj in objects_data:
+                obj["image_generating"] = False
+            
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                gc.collect()
+            
+            yield (total, total, "Complete", objects_data, True)
+            
+        except Exception as e:
+            logger.error(f"Error generating images: {e}")
+            # On error, also clear the generating flag
+            for obj in objects_data:
+                obj["image_generating"] = False
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            yield (0, len(objects_data), f"Error: {str(e)}", objects_data, True) 
