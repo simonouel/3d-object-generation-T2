@@ -36,16 +36,17 @@ import time
 import socket
 import logging
 import datetime
+import config
 from components.chat_interface import create_chat_interface, handle_scene_description
 from components.image_gallery import create_image_gallery
 from components.blender_export import create_blender_export_section, update_export_section, create_export_modal, open_export_modal, close_export_modal, export_3d_assets_to_folder
 from components.status_panel import create_status_panel
 from components.modal import create_modal, open_image_settings, close_modal, create_edit_modal, create_start_over_confirmation_modal, open_start_over_confirmation, close_start_over_confirmation
 from components.image_card import create_refresh_handler, create_3d_generation_handler, create_convert_all_3d_handler, invalidate_3d_model
-from services.agent_service import AgentService
-from services.image_generation_service import ImageGenerationService
-from services.model_3d_service import Model3DService
-import config
+from services import AgentService, ImageGenerationService, Model3DService
+# Import GPU memory manager for native model coordination
+if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+    from services.gpu_memory_manager import get_gpu_memory_manager
 import threading
 import subprocess
 import requests
@@ -253,13 +254,20 @@ def _ensure_trellis_nim_started():
     threading.Thread(target=_runner, daemon=True).start()
 
 def _ensure_all_nims_started():
-    """Start both LLM and Trellis NIM containers in parallel."""
-    _ensure_llm_nim_started()
-    _ensure_trellis_nim_started()
+    """Start NIM containers based on config settings."""
+    # Only start LLM NIM if not using native LLM
+    if not config.USE_NATIVE_LLM:
+        _ensure_llm_nim_started()
+    # Only start Trellis NIM if not using native TRELLIS
+    if not config.USE_NATIVE_TRELLIS:
+        _ensure_trellis_nim_started()
 
 
 def stop_llm_container(force=False):
     """Stop the LLM container after workspace transition."""
+    # Skip if using native LLM (no container to stop)
+    if config.USE_NATIVE_LLM:
+        return
     # Only proceed if we're in workspace mode (valid scene input)
     global _in_workspace_mode, _nim_bootstrap_started
     if not _in_workspace_mode and not force:
@@ -291,6 +299,9 @@ def stop_llm_container(force=False):
 
 def stop_trellis_container(force=True):
     """Stop the Trellis container after workspace transition."""
+    # Skip if using native TRELLIS (no container to stop)
+    if config.USE_NATIVE_TRELLIS:
+        return
     # Only proceed if we're in workspace mode (valid scene input)
     global _trellis_bootstrap_started
  
@@ -329,6 +340,23 @@ def create_app():
     agent_service = AgentService()
     image_generation_service = ImageGenerationService()
     model_3d_service = Model3DService()
+
+    # Register services with GPU memory manager for coordinated memory management
+    if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+        gpu_manager = get_gpu_memory_manager()
+        gpu_manager.register_llm_service(agent_service)
+        gpu_manager.register_sana_service(image_generation_service)
+        gpu_manager.register_trellis_service(model_3d_service)
+        print("GPU Memory Manager initialized - services registered")
+        
+        # Pre-load all models at startup
+        # This loads TRELLIS, SANA, and LLM, then moves TRELLIS and SANA to CPU
+        # LLM stays on GPU ready for chat
+        print("\n" + "=" * 60)
+        print("PRE-LOADING MODELS - Please wait...")
+        print("=" * 60)
+        preload_status = gpu_manager.preload_all_models()
+        print(f"Pre-loading complete in {preload_status['total_time']:.2f} seconds")
 
     delete_assets_dir()
 
@@ -400,6 +428,14 @@ def create_app():
                 with gr.Column(visible=False, elem_classes=["workspace-section"]) as workspace_section:
                     with gr.Row():
                         start_over_btn = gr.Button("← Start over with a new scene prompt", elem_classes=["start-over-btn"], size="sm")
+                    
+                    # Image generation progress bar (shown during SANA image generation)
+                    image_progress_html = gr.HTML(
+                        value="",
+                        visible=False,
+                        elem_classes=["image-generation-progress"]
+                    )
+                    
                     # Object gallery
                     gallery_components = create_image_gallery()
                     
@@ -419,13 +455,20 @@ def create_app():
                 settings_modal, modal_image_title, close_btn, modal_image, modal_3d, no_3d_message = create_modal()
                 settings_modal.visible = False
                 
+                # 3D Generation Status Message (simple inline message, no modal)
+                three_d_status_message = gr.HTML(
+                    value="",
+                    visible=False,
+                    elem_classes=["three-d-status-message"]
+                )
+                
                 # Edit modal components
                 edit_modal, edit_title, edit_description, cancel_edit_btn, update_edit_btn = create_edit_modal()
                 edit_modal.visible = False
                 edit_current_index = gr.State(None)
                 
                 # Export modal components
-                export_modal, scene_folder_input, export_cancel_btn, export_save_btn = create_export_modal()
+                export_modal, scene_folder_input, export_error_message, export_cancel_btn, export_save_btn = create_export_modal()
                 export_modal.visible = False
                 
                 # Start over confirmation modal components
@@ -445,6 +488,119 @@ def create_app():
                 status_components = {"close_btn": gr.Button(visible=False)}
         
         # Wire up the event handlers
+        def create_progress_html(current, total, message):
+            """Create HTML for the progress bar."""
+            percentage = int((current / total) * 100) if total > 0 else 0
+            # Show count only when we have a total, otherwise just show the message
+            progress_text = f"{message} ({current}/{total})" if total > 0 else message
+            return f"""
+            <div class="generation-progress-container">
+                <div class="progress-bar-wrapper">
+                    <div class="progress-bar" style="width: {percentage}%"></div>
+                </div>
+                <div class="progress-text">{message} ({current}/{total})</div>
+            </div>
+            """
+        
+        def handle_scene_input_with_progress(scene_description, gallery_data):
+            """Handle scene input with progress updates (generator function).
+            
+            This generator yields updates to:
+            - scene_input (clear it and disable during processing)
+            - send_btn (disable during processing)
+            - gallery_data
+            - progress_html (show progress)
+            - tip (hide/show tips)
+            """
+            if not scene_description.strip():
+                tip_html = """
+                <div class="tip-message">
+                    <span class="tip-icon">💡</span>
+                    <span class="tip-text">Please enter a scene description.</span>
+                </div>
+                """
+                yield gr.update(value="", interactive=True), gr.update(interactive=True), gallery_data, gr.update(visible=False), gr.update(value=tip_html, visible=True)
+                return
+            
+            # Immediately disable input and send button while processing
+            yield gr.update(value="", interactive=False), gr.update(interactive=False), gallery_data, gr.update(visible=False), gr.update(visible=False)
+            
+            # Prepare GPU for LLM inference
+            if config.USE_NATIVE_LLM:
+                gpu_manager = get_gpu_memory_manager()
+                gpu_manager.prepare_for_llm()
+            
+            # First, classify the input
+            classification, tip_message = agent_service.classify_input(scene_description)
+            
+            if classification != "SCENE":
+                tip_html = f"""
+                <div class="tip-message">
+                    <span class="tip-icon">💡</span>
+                    <span class="tip-text">{tip_message}</span>
+                </div>
+                """
+                # Re-enable input and button on non-scene classification
+                yield gr.update(value="", interactive=True), gr.update(interactive=True), gallery_data, gr.update(visible=False), gr.update(value=tip_html, visible=True)
+                return
+            
+            # Valid scene - show progress bar and start generation
+            total_objects = config.NUM_OF_OBJECTS
+            
+            # Use the generator version to get progress updates
+            final_result = None
+            for progress_current, progress_total, status_message, is_complete, result in agent_service.generate_objects_and_prompts_with_progress(scene_description):
+                progress_html = create_progress_html(progress_current, progress_total, status_message)
+                
+                if is_complete:
+                    final_result = result
+                    # Hide progress bar on completion (keep input/button disabled - will re-enable after image gen)
+                    yield gr.update(interactive=False), gr.update(interactive=False), gallery_data, gr.update(visible=False), gr.update(visible=False)
+                else:
+                    # Show progress update (input/button stays disabled)
+                    yield gr.update(interactive=False), gr.update(interactive=False), gallery_data, gr.update(value=progress_html, visible=True), gr.update(visible=False)
+            
+            # Process final result
+            if final_result:
+                success, prompts, message = final_result
+                
+                if success and prompts:
+                    # Create gallery data from prompts
+                    new_gallery_data = []
+                    for obj_name, prompt in prompts.items():
+                        gallery_item = {
+                            "title": obj_name,
+                            "path": None,
+                            "description": prompt,
+                            "image_generating": True,
+                        }
+                        new_gallery_data.append(gallery_item)
+                    
+                    # Reset agent memory
+                    agent_service.clear_memory()
+                    
+                    # Yield final result with new gallery data (input/button stays disabled during image gen)
+                    yield gr.update(interactive=False), gr.update(interactive=False), new_gallery_data, gr.update(visible=False), gr.update(visible=False)
+                else:
+                    tip_html = f"""
+                    <div class="tip-message">
+                        <span class="tip-icon">⚠️</span>
+                        <span class="tip-text">Error: {message}</span>
+                    </div>
+                    """
+                    # Re-enable input and button on error
+                    yield gr.update(value="", interactive=True), gr.update(interactive=True), gallery_data, gr.update(visible=False), gr.update(value=tip_html, visible=True)
+            else:
+                tip_html = """
+                <div class="tip-message">
+                    <span class="tip-icon">⚠️</span>
+                    <span class="tip-text">Error generating objects</span>
+                </div>
+                """
+                # Re-enable input and button on error
+                yield gr.update(value="", interactive=True), gr.update(interactive=True), gallery_data, gr.update(visible=False), gr.update(value=tip_html, visible=True)
+        
+        # Keep the old non-generator version for compatibility
         def process_scene_description(scene_description, gallery_data):
             """Process scene description and generate objects, then update gallery."""
             if not scene_description.strip():
@@ -501,8 +657,7 @@ def create_app():
                     gr.update(visible=False),                 # keep workspace hidden
                     gr.update(elem_classes=["main-content", "landing"]), # keep landing centering
                     gr.update(visible=True),                  # keep chat section visible
-                    False,                                    # keep workspace mode False
-                    current_counter,                          # keep current counter
+                    current_counter,                          # keep current counter (4 outputs expected)
                 )
             
             # Valid scene with gallery data - proceed with transition
@@ -529,32 +684,36 @@ def create_app():
             except Exception as e:
                 print(f"Error cleaning up SANA pipeline: {e}")
             
-            # Check if both services are ready before showing chat
-            llm_health_url = f"{config.AGENT_BASE_URL}/health/ready"
-            trellis_health_url = f"{config.TRELLIS_BASE_URL}/health/ready"
+            # Check if LLM is ready before showing chat (Trellis can load in background)
+            if config.USE_NATIVE_LLM:
+                llm_ready = True  # Native LLM is always ready
+            else:
+                llm_health_url = f"{config.AGENT_BASE_URL}/health/ready"
+                try:
+                    llm_resp = requests.get(llm_health_url, timeout=1.0)
+                    llm_ready = (llm_resp.status_code == 200)
+                except Exception:
+                    llm_ready = False
             
-            try:
-                llm_resp = requests.get(llm_health_url, timeout=1.0)
-                llm_ready = (llm_resp.status_code == 200)
-            except Exception:
-                llm_ready = False
+            # Check Trellis health (skip if using native TRELLIS)
+            if config.USE_NATIVE_TRELLIS:
+                trellis_ready = True  # Native TRELLIS is always ready (loaded on demand)
+            else:
+                trellis_health_url = f"{config.TRELLIS_BASE_URL}/health/ready"
+                try:
+                    trellis_resp = requests.get(trellis_health_url, timeout=1.0)
+                    trellis_ready = (trellis_resp.status_code == 200)
+                except Exception:
+                    trellis_ready = False
                 
-            try:
-                trellis_resp = requests.get(trellis_health_url, timeout=1.0)
-                trellis_ready = (trellis_resp.status_code == 200)
-            except Exception:
-                trellis_ready = False
-                
-            both_ready = llm_ready and trellis_ready
-                
-            # Start the services again if not ready
-            if not both_ready:
+            # Start the NIM services again if needed (only for non-native backends)
+            if (not llm_ready and not config.USE_NATIVE_LLM) or (not trellis_ready and not config.USE_NATIVE_TRELLIS):
                 _ensure_all_nims_started()
             
             return (
                 gr.update(visible=False),               # hide workspace
                 gr.update(elem_classes=["main-content", "landing"]),  # restore landing centering
-                gr.update(visible=both_ready),          # show chat section only if both services are ready
+                gr.update(visible=llm_ready),           # show chat section when LLM is ready
                 gr.update(value=""),                   # clear chat input
                 gr.update(visible=False),               # hide export status
                 gr.update(visible=False) if ENABLE_STATUS_PANEL else gr.update(visible=False),  # hide right panel if open
@@ -579,6 +738,125 @@ def create_app():
             return updated_data
         
         # New: Generate images for all objects after moving to workspace
+        def create_image_progress_html(current, total, object_name):
+            """Create HTML for image generation progress bar."""
+            percentage = int((current / total) * 100) if total > 0 else 0
+            return f"""
+            <div class="generation-progress-container">
+                <div class="progress-bar-wrapper">
+                    <div class="progress-bar" style="width: {percentage}%"></div>
+                </div>
+                <div class="progress-text">Generating image {current}/{total}: {object_name}</div>
+            </div>
+            """
+        
+        def generate_images_with_ui_updates(gallery_data):
+            """Generate images progressively and update card UI after each image (generator).
+            
+            This generator yields:
+            - gallery_data (State)
+            - image_progress_html (HTML visibility/content)
+            - scene_input (to re-enable after completion)
+            - send_btn (to re-enable after completion)
+            - all card UI components from shift_card_ui
+            """
+            global _in_workspace_mode
+            
+            # Get the card UI update function
+            shift_card_ui = gallery_components["shift_card_ui"]
+            
+            if not _in_workspace_mode or not gallery_data:
+                # Yield initial state with hidden progress, re-enable input and button
+                card_updates = shift_card_ui(gallery_data if gallery_data else [])
+                yield [gallery_data, gr.update(visible=False), gr.update(interactive=True), gr.update(interactive=True)] + card_updates
+                return
+            
+            print("Generating images progressively with UI updates...")
+            
+            # Prepare GPU for SANA
+            if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+                gpu_manager = get_gpu_memory_manager()
+                gpu_manager.prepare_for_sana()
+            
+            try:
+                # Use the progressive generator
+                for current, total, object_name, updated_data, is_complete in image_generation_service.generate_images_for_objects_with_progress(
+                    gallery_data, output_dir=config.GENERATED_IMAGES_DIR
+                ):
+                    # Get card UI updates for current state
+                    card_updates = shift_card_ui(updated_data)
+                    
+                    if is_complete:
+                        # Final update - hide progress bar, re-enable text input and send button
+                        print(f"Image generation complete: {current}/{total}")
+                        # Move SANA to CPU
+                        image_generation_service.move_sana_pipeline_to_cpu()
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            gc.collect()
+                        yield [updated_data, gr.update(visible=False), gr.update(interactive=True), gr.update(interactive=True)] + card_updates
+                    else:
+                        # Progress update - show progress bar, keep input and button disabled
+                        progress_html = create_image_progress_html(current, total, object_name)
+                        print(f"Generated image {current}/{total}: {object_name}")
+                        yield [updated_data, gr.update(value=progress_html, visible=True), gr.update(interactive=False), gr.update(interactive=False)] + card_updates
+                        
+            except Exception as e:
+                print(f"Error during image generation: {str(e)}")
+                # Clear flags, hide progress, re-enable input and button
+                for obj in gallery_data:
+                    if "image_generating" in obj:
+                        obj["image_generating"] = False
+                card_updates = shift_card_ui(gallery_data)
+                yield [gallery_data, gr.update(visible=False), gr.update(interactive=True), gr.update(interactive=True)] + card_updates
+        
+        def generate_images_for_gallery_with_progress(gallery_data):
+            """Generate images progressively with UI updates after each image (generator)."""
+            global _in_workspace_mode
+            if not _in_workspace_mode:
+                yield gallery_data, gr.update(visible=False)
+                return
+            
+            if not gallery_data:
+                yield gallery_data, gr.update(visible=False)
+                return
+            
+            print("Generating images progressively...")
+            
+            # Prepare GPU for SANA
+            if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+                gpu_manager = get_gpu_memory_manager()
+                gpu_manager.prepare_for_sana()
+            
+            try:
+                # Use the progressive generator
+                for current, total, object_name, updated_data, is_complete in image_generation_service.generate_images_for_objects_with_progress(
+                    gallery_data, output_dir=config.GENERATED_IMAGES_DIR
+                ):
+                    if is_complete:
+                        # Final update - hide progress bar
+                        print(f"Image generation complete: {current}/{total}")
+                        # Move SANA to CPU
+                        image_generation_service.move_sana_pipeline_to_cpu()
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            gc.collect()
+                        yield updated_data, gr.update(visible=False)
+                    else:
+                        # Progress update - show progress bar and update gallery
+                        progress_html = create_image_progress_html(current, total, object_name)
+                        print(f"Generated image {current}/{total}: {object_name}")
+                        yield updated_data, gr.update(value=progress_html, visible=True)
+                        
+            except Exception as e:
+                print(f"Error during image generation: {str(e)}")
+                # Clear flags and hide progress
+                for obj in gallery_data:
+                    if "image_generating" in obj:
+                        obj["image_generating"] = False
+                yield gallery_data, gr.update(visible=False)
+        
+        # Keep the old non-generator version for compatibility
         def generate_images_for_gallery(gallery_data):
             print(f"Timestamp before generate_images_for_gallery: {time.time()}")
             # Only proceed if we're in workspace mode (valid scene input)
@@ -594,9 +872,17 @@ def create_app():
                 print(f"Timestamp before generate_images_for_objects: {time.time()}")
                 success, message, generated_images = image_generation_service.generate_images_for_objects(gallery_data, output_dir=config.GENERATED_IMAGES_DIR)
                 print(f"Timestamp after generate_images_for_objects: {time.time()}")
-                if image_generation_service.if_sana_pipeline_movement_required():
-                    image_generation_service.move_sana_pipeline_to_cpu()
-                    print(f"Timestamp after move_sana_pipeline_to_cpu: {time.time()}")
+                
+                # Move SANA to CPU after image generation
+                print("Moving SANA to CPU after image generation...")
+                image_generation_service.move_sana_pipeline_to_cpu()
+                
+                # Clear GPU cache (but don't synchronize - it blocks system-wide)
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                print("GPU memory cleared, ready for image display")
+                
                 if success and generated_images:
                     updated_data = []
                     for obj in gallery_data:
@@ -666,9 +952,6 @@ def create_app():
         # Health check function for both LLM and Trellis NIMs; updates status and controls UI visibility
         def check_services_health(current_counter):
             global _in_workspace_mode
-            print("check_services_health")
-            print("global _in_workspace_mode", _in_workspace_mode)
-            print("current_counter", current_counter)
 
             if _in_workspace_mode and current_counter == 0:
                 # add kill app logic here
@@ -697,27 +980,34 @@ def create_app():
                 os._exit(0)
             
             
-            # Check LLM health
-            llm_health_url = f"{config.AGENT_BASE_URL}/health/ready"
-            try:
-                llm_resp = requests.get(llm_health_url, timeout=1.0)
-                llm_ready = (llm_resp.status_code == 200)
-            except Exception:
-                llm_ready = False
+            # Check LLM health (skip if using native LLM)
+            if config.USE_NATIVE_LLM:
+                # Native LLM is always "ready" (loaded on demand)
+                llm_ready = True
+            else:
+                llm_health_url = f"{config.AGENT_BASE_URL}/health/ready"
+                try:
+                    llm_resp = requests.get(llm_health_url, timeout=1.0)
+                    llm_ready = (llm_resp.status_code == 200)
+                except Exception:
+                    llm_ready = False
             
-            # Check Trellis health
-            trellis_health_url = f"{config.TRELLIS_BASE_URL}/health/ready"
-            try:
-                trellis_resp = requests.get(trellis_health_url, timeout=1.0)
-                trellis_ready = (trellis_resp.status_code == 200)
-            except Exception:
-                trellis_ready = False
+            # Check Trellis health (skip if using native TRELLIS)
+            if config.USE_NATIVE_TRELLIS:
+                trellis_ready = True  # Native TRELLIS is always ready (loaded on demand)
+            else:
+                trellis_health_url = f"{config.TRELLIS_BASE_URL}/health/ready"
+                try:
+                    trellis_resp = requests.get(trellis_health_url, timeout=1.0)
+                    trellis_ready = (trellis_resp.status_code == 200)
+                except Exception:
+                    trellis_ready = False
             
             # Build status display
             llm_color = "#16be16" if llm_ready else "#f59e0b"
             trellis_color = "#16be16" if trellis_ready else "#f59e0b"
-            llm_label = "LLM: ready" if llm_ready else "LLM: Unloaded"
-            trellis_label = "Trellis: ready" if trellis_ready else "Trellis: Unloaded"
+            llm_label = "LLM: Native" if config.USE_NATIVE_LLM else ("LLM: ready" if llm_ready else "LLM: Unloaded")
+            trellis_label = "Trellis: Native" if config.USE_NATIVE_TRELLIS else ("Trellis: ready" if trellis_ready else "Trellis: Loading...")
             
             status_html = f'''
             <div class="status-section">
@@ -726,16 +1016,15 @@ def create_app():
             </div>
             '''
             
-            # Both services must be ready to proceed
-            both_ready = llm_ready and trellis_ready
-            show_spinner = not both_ready and not _in_workspace_mode
-            # Only show chat when both services are ready AND we're not in workspace mode
-            show_chat = both_ready and not _in_workspace_mode
+            # Only LLM needs to be ready to show landing page
+            # Trellis will continue loading in background and must be ready before 3D generation
+            show_spinner = not llm_ready and not _in_workspace_mode
+            # Show chat when LLM is ready (don't wait for Trellis)
+            show_chat = llm_ready and not _in_workspace_mode
             # Show refresh button when in workspace mode, hide when in landing mode
             show_refresh = True
             # Stop timer if we're in workspace mode
             timer_active = not _in_workspace_mode
-            print(f"Checking services health... LLM: {llm_ready}, Trellis: {trellis_ready}, in_workspace_mode: {_in_workspace_mode} timer_active: {timer_active}")
             return gr.update(visible=show_spinner), gr.update(value=status_html), gr.update(visible=show_chat), gr.update(visible=show_refresh), gr.update(active=timer_active)
         
         # Timer for initial health polling (only active until we reach workspace mode)
@@ -753,11 +1042,11 @@ def create_app():
             outputs=[llm_spinner, llm_status, chat_components["section"], refresh_status_btn, health_timer]
         )
         
-        # Connect send button to process scene description
+        # Connect send button to process scene description with progress
         chat_components["send_btn"].click(
-            fn=handle_scene_input,
+            fn=handle_scene_input_with_progress,
             inputs=[chat_components["input"], gallery_components["data"]],
-            outputs=[chat_components["input"], gallery_components["data"], chat_components["tip"]]
+            outputs=[chat_components["input"], chat_components["send_btn"], gallery_components["data"], chat_components["progress"], chat_components["tip"]]
         ).then(
             fn=gallery_components["shift_card_ui"],
             inputs=[gallery_components["data"]],
@@ -787,13 +1076,9 @@ def create_app():
             inputs=[],
             outputs=[]
         ).then(
-            fn=generate_images_for_gallery,
+            fn=generate_images_with_ui_updates,
             inputs=[gallery_components["data"]],
-            outputs=[gallery_components["data"]]
-        ).then(
-            fn=gallery_components["shift_card_ui"],
-            inputs=[gallery_components["data"]],
-            outputs=gallery_components["get_all_card_outputs"]()
+            outputs=[gallery_components["data"], image_progress_html, chat_components["input"], chat_components["send_btn"]] + gallery_components["get_all_card_outputs"]()
         ).then(
             fn=update_export_section,
             inputs=[gallery_components["data"]],
@@ -804,11 +1089,11 @@ def create_app():
             outputs=[start_over_btn]
         )
         
-        # Connect Enter key for scene input
+        # Connect Enter key for scene input with progress
         chat_components["input"].submit(
-            fn=handle_scene_input,
+            fn=handle_scene_input_with_progress,
             inputs=[chat_components["input"], gallery_components["data"]],
-            outputs=[chat_components["input"], gallery_components["data"], chat_components["tip"]]
+            outputs=[chat_components["input"], chat_components["send_btn"], gallery_components["data"], chat_components["progress"], chat_components["tip"]]
         ).then(
             fn=gallery_components["shift_card_ui"],
             inputs=[gallery_components["data"]],
@@ -838,13 +1123,9 @@ def create_app():
             inputs=[],
             outputs=[]
         ).then(
-            fn=generate_images_for_gallery,
+            fn=generate_images_with_ui_updates,
             inputs=[gallery_components["data"]],
-            outputs=[gallery_components["data"]]
-        ).then(
-            fn=gallery_components["shift_card_ui"],
-            inputs=[gallery_components["data"]],
-            outputs=gallery_components["get_all_card_outputs"]()
+            outputs=[gallery_components["data"], image_progress_html, chat_components["input"], chat_components["send_btn"]] + gallery_components["get_all_card_outputs"]()
         ).then(
             fn=update_export_section,
             inputs=[gallery_components["data"]],
@@ -977,7 +1258,7 @@ def create_app():
         three_d_handler = create_3d_generation_handler(model_3d_service)
         
         # Create convert all to 3D handler (two-stage process)
-        disable_buttons_handler, convert_all_handler = create_convert_all_3d_handler(model_3d_service)
+        disable_buttons_handler, convert_all_handler, convert_all_with_progress = create_convert_all_3d_handler(model_3d_service)
         
         def update_modal_3d_components(gallery_data, card_idx):
             """Update modal 3D components based on 3D model availability."""
@@ -1056,6 +1337,70 @@ def create_app():
                 outputs=[start_over_btn]
             )
         
+        # Helper functions for 3D generation modal
+        def create_3d_status_html(message, is_generating=False):
+            """Create simple status message HTML for 3D generation."""
+            if is_generating:
+                return f"""
+                <div class="three-d-inline-status generating">
+                    <span class="status-icon">⏳</span>
+                    <span class="status-text">{message}</span>
+                </div>
+                """
+            else:
+                return f"""
+                <div class="three-d-inline-status">
+                    <span class="status-text">{message}</span>
+                </div>
+                """
+        
+        def show_3d_status_single():
+            """Show status message for single 3D generation."""
+            status_html = create_3d_status_html("Generating 3D model (~50 sec)...", is_generating=True)
+            return gr.update(value=status_html, visible=True)
+        
+        def hide_3d_status():
+            """Hide the 3D status message."""
+            return gr.update(value="", visible=False)
+        
+        def batch_convert_3d_with_status(gallery_data):
+            """Generator: Convert all objects to 3D with inline status updates.
+            
+            Yields updates to:
+            - gallery_data
+            - three_d_status_message (HTML)
+            - all card UI components
+            """
+            shift_card_ui = gallery_components["shift_card_ui"]
+            
+            if not gallery_data:
+                card_updates = shift_card_ui([])
+                yield [gallery_data, gr.update(visible=False)] + card_updates
+                return
+            
+            # Count objects to convert
+            items_to_convert = [obj for obj in gallery_data if obj.get("path") and not obj.get("glb_path") and not obj.get("content_filtered")]
+            total = len(items_to_convert)
+            
+            if total == 0:
+                card_updates = shift_card_ui(gallery_data)
+                yield [gallery_data, gr.update(value=create_3d_status_html("All objects already have 3D models."), visible=True)] + card_updates
+                return
+            
+            # Use the generator version
+            for current, total_count, object_name, updated_data, is_complete, was_cancelled in convert_all_with_progress(gallery_data, None):
+                card_updates = shift_card_ui(updated_data)
+                
+                if is_complete:
+                    if was_cancelled:
+                        status_html = create_3d_status_html(f"❌ Cancelled after {current}/{total_count} objects.")
+                    else:
+                        status_html = create_3d_status_html(f"✅ All {total_count} objects converted to 3D!")
+                    yield [updated_data, gr.update(value=status_html, visible=True)] + card_updates
+                else:
+                    status_html = create_3d_status_html(f"Generating 3D: {object_name} ({current + 1}/{total_count}) ~50 sec each", is_generating=True)
+                    yield [updated_data, gr.update(value=status_html, visible=True)] + card_updates
+        
         # Wire up 3D generation button events for each card
         for idx, card in enumerate(gallery_components["card_components"]):
             def create_3d_function(card_idx):
@@ -1104,9 +1449,17 @@ def create_app():
                 inputs=[gallery_components["data"]],
                 outputs=[start_over_btn]
             ).then(
+                fn=show_3d_status_single,                # Show status message
+                inputs=[],
+                outputs=[three_d_status_message]
+            ).then(
                 fn=generation_fn,
                 inputs=[gallery_components["data"]],
                 outputs=[gallery_components["data"]]
+            ).then(
+                fn=hide_3d_status,                       # Hide status after generation
+                inputs=[],
+                outputs=[three_d_status_message]
             ).then(
                 fn=gallery_components["shift_card_ui"],
                 inputs=[gallery_components["data"]],
@@ -1191,10 +1544,9 @@ def create_app():
                         output_dir=config.GENERATED_IMAGES_DIR,
                         seed=new_seed
                     )
-                    if image_generation_service.if_sana_pipeline_movement_required():
-                        print(f"Timestamp after generate_image_from_prompt: {time.time()}")
-                        image_generation_service.move_sana_pipeline_to_cpu()
-                        print(f"Timestamp after move_sana_pipeline_to_cpu: {time.time()}")
+                    # SANA stays on GPU - will be moved to CPU by GPUMemoryManager
+                    # when LLM or TRELLIS needs GPU
+                    print(f"Timestamp after generate_image_from_prompt: {time.time()}")
 
                     invalidate_reason = None
                     
@@ -1312,7 +1664,7 @@ def create_app():
                 outputs=[export_components["count_display"], export_components["thumbnails_container"], export_components["export_btn"], export_components["placeholder"], export_components["export_content_active"]]
             )
         
-        # Wire up convert all to 3D button (two-stage process)
+        # Wire up convert all to 3D button with modal and progress
         gallery_components["convert_all_btn"].click(
             fn=disable_buttons_handler,
             inputs=[gallery_components["data"]],
@@ -1326,13 +1678,9 @@ def create_app():
             inputs=[gallery_components["data"]],
             outputs=[start_over_btn]
         ).then(
-            fn=convert_all_handler,
+            fn=batch_convert_3d_with_status,
             inputs=[gallery_components["data"]],
-            outputs=[gallery_components["data"]]
-        ).then(
-            fn=gallery_components["shift_card_ui"],
-            inputs=[gallery_components["data"]],
-            outputs=gallery_components["get_all_card_outputs"]()
+            outputs=[gallery_components["data"], three_d_status_message] + gallery_components["get_all_card_outputs"]()
         ).then(
             fn=update_export_section,
             inputs=[gallery_components["data"]],
@@ -1353,17 +1701,14 @@ def create_app():
         # Wire up export modal event handlers
         export_cancel_btn.click(
             fn=close_export_modal,
-            outputs=[export_modal, scene_folder_input]
+            outputs=[export_modal, scene_folder_input, export_error_message]
         )
         
-        # Wire up save button to export assets
+        # Wire up save button to export assets (validates folder name)
         export_save_btn.click(
             fn=export_3d_assets_to_folder,
             inputs=[gallery_components["data"], scene_folder_input],
-            outputs=[export_modal]
-        ).then(
-            fn=close_export_modal,
-            outputs=[export_modal, scene_folder_input]
+            outputs=[export_modal, export_error_message]
         )
         
     return app
@@ -1376,7 +1721,7 @@ if __name__ == "__main__":
         print("Starting app creation")
         app = create_app()
         print("app created, launching app...")
-        app.launch(debug=True, server_name="127.0.0.1", server_port=7860, share=False, quiet=True)
+        app.launch(debug=True, server_name="127.0.0.1", server_port=7860, share=False, quiet=False)
         print("app Launched")
     except KeyboardInterrupt:
         print("\nKeyboard interrupt received...")
@@ -1394,8 +1739,8 @@ if __name__ == "__main__":
                 except Exception as e:
                     print(f"Error stopping termination server: {e}")
             
-            # Stop the LLM NIM process if it's running
-            if _nim_process and _nim_process.poll() is None:
+            # Stop the LLM NIM process if it's running (only for NIM mode)
+            if not config.USE_NATIVE_LLM and _nim_process and _nim_process.poll() is None:
                 print("Stopping LLM NIM process...")
                 try:
                     _nim_process.terminate()
@@ -1406,8 +1751,8 @@ if __name__ == "__main__":
                 except Exception as e:
                     print(f"Error stopping LLM NIM process: {e}")
             
-            # Stop the Trellis NIM process if it's running
-            if _trellis_process and _trellis_process.poll() is None:
+            # Stop the Trellis NIM process if it's running (only for NIM mode)
+            if not config.USE_NATIVE_TRELLIS and _trellis_process and _trellis_process.poll() is None:
                 print("Stopping Trellis NIM process...")
                 try:
                     _trellis_process.terminate()
@@ -1418,11 +1763,8 @@ if __name__ == "__main__":
                 except Exception as e:
                     print(f"Error stopping Trellis NIM process: {e}")
             
-            # Stop both NIM containers
-            print("Stopping LLM NIM container...")
+            # Stop NIM containers (functions already check for native mode)
             stop_llm_container(force=True)
-            
-            print("Stopping Trellis NIM container...")
             stop_trellis_container(force=True)
            
             print("Cleanup completed")

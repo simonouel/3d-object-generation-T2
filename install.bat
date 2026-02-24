@@ -19,6 +19,55 @@ setlocal enabledelayedexpansion
 
 echo Starting installation process...
 
+REM Setup trellis submodule (excludes INRIA-licensed files)
+echo Setting up trellis submodule...
+call setup_trellis.bat
+if errorlevel 1 (
+    echo [ERROR] Failed to setup trellis submodule!
+    pause
+    exit /b 1
+)
+
+REM Read CONDA_ENV_NAME from config.py
+set "ENV_NAME=trellis"
+for /f "tokens=2 delims==" %%a in ('findstr /C:"CONDA_ENV_NAME" config.py 2^>nul') do (
+    set "RAW_VALUE=%%a"
+    REM Remove quotes and spaces
+    set "RAW_VALUE=!RAW_VALUE: =!"
+    set "RAW_VALUE=!RAW_VALUE:"=!"
+    if not "!RAW_VALUE!"=="" set "ENV_NAME=!RAW_VALUE!"
+)
+echo Using conda environment name: %ENV_NAME%
+
+REM Read USE_NATIVE_LLM from config.py
+set "USE_NATIVE_LLM=True"
+for /f "tokens=2 delims==" %%a in ('findstr /C:"USE_NATIVE_LLM" config.py 2^>nul') do (
+    set "RAW_VALUE=%%a"
+    set "RAW_VALUE=!RAW_VALUE: =!"
+    set "RAW_VALUE=!RAW_VALUE:"=!"
+    REM Remove inline comments
+    for /f "tokens=1 delims=#" %%b in ("!RAW_VALUE!") do set "RAW_VALUE=%%b"
+    if /i "!RAW_VALUE!"=="True" set "USE_NATIVE_LLM=True"
+    if /i "!RAW_VALUE!"=="False" set "USE_NATIVE_LLM=False"
+)
+
+REM Read USE_NATIVE_TRELLIS from config.py
+set "USE_NATIVE_TRELLIS=True"
+for /f "tokens=2 delims==" %%a in ('findstr /C:"USE_NATIVE_TRELLIS" config.py 2^>nul') do (
+    set "RAW_VALUE=%%a"
+    set "RAW_VALUE=!RAW_VALUE: =!"
+    set "RAW_VALUE=!RAW_VALUE:"=!"
+    REM Remove inline comments
+    for /f "tokens=1 delims=#" %%b in ("!RAW_VALUE!") do set "RAW_VALUE=%%b"
+    if /i "!RAW_VALUE!"=="True" set "USE_NATIVE_TRELLIS=True"
+    if /i "!RAW_VALUE!"=="False" set "USE_NATIVE_TRELLIS=False"
+)
+
+echo Configuration:
+echo   Conda environment: %ENV_NAME%
+echo   USE_NATIVE_LLM: %USE_NATIVE_LLM%
+echo   USE_NATIVE_TRELLIS: %USE_NATIVE_TRELLIS%
+
 REM Check if conda is installed
 echo Checking for Conda...
 where conda >nul 2>&1
@@ -39,6 +88,16 @@ if not exist requirements-torch.txt (
 )
 if not exist requirements.txt (
     echo [ERROR] requirements.txt not found!
+    pause
+    exit /b 1
+)
+if not exist install_dependencies.py (
+    echo [ERROR] install_dependencies.py not found!
+    pause
+    exit /b 1
+)
+if not exist config.py (
+    echo [ERROR] config.py not found!
     pause
     exit /b 1
 )
@@ -88,50 +147,53 @@ if !CONDA_FOUND! equ 0 (
 )
 :: Initialize Conda for this session
 echo Conda found at: %CONDA_PATH%
-echo Using conda command from PATH...
+
+:: Initialize conda hooks for this shell session
+echo Initializing Conda hooks...
+if exist "%CONDA_PATH%\condabin\conda_hook.bat" (
+    call "%CONDA_PATH%\condabin\conda_hook.bat"
+) else if exist "%CONDA_PATH%\Scripts\activate.bat" (
+    call "%CONDA_PATH%\Scripts\activate.bat"
+)
 
 :: Accept Anaconda Terms of Service
 echo Accepting Anaconda Terms of Service...
-call conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
-call conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-call conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2
+call conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>nul
+call conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>nul
+call conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2 2>nul
 
 :: Create conda environment if it doesn't exist
-echo Checking for trellis environment...
-call conda env list | findstr "trellis" >nul
+echo Checking for %ENV_NAME% environment...
+call conda env list | findstr "%ENV_NAME%" >nul
 if errorlevel 1 (
-    echo Creating conda environment 'trellis'...
-    call conda create -n trellis python=3.11.9 -y
+    echo Creating conda environment '%ENV_NAME%'...
+    call conda create -n %ENV_NAME% python=3.11.9 -y
     if errorlevel 1 (
         echo [ERROR] Failed to create conda environment!
         pause
         exit /b 1
     )
-    echo Conda environment 'trellis' created successfully.
+    echo Conda environment '%ENV_NAME%' created successfully.
 ) else (
-    echo Conda environment 'trellis' already exists.
+    echo Conda environment '%ENV_NAME%' already exists.
 )
 
-:: Activate conda environment
-echo Activating conda environment...
-call conda activate trellis
-if errorlevel 1 (
-    echo [ERROR] Failed to activate conda environment!
-    pause
-    exit /b 1
-)
-
+:: Skip activation - use 'conda run' for all commands instead
+:: This avoids the need for 'conda init'
+echo.
+echo Will use 'conda run -n %ENV_NAME%' for all commands (no activation needed)
+echo.
 
 REM Update pip and install build tools
 echo Updating pip and installing build tools...
-python -m pip install --upgrade pip wheel
+call conda run -n %ENV_NAME% --no-capture-output python -m pip install --upgrade pip wheel
 if errorlevel 1 (
     echo [ERROR] Failed to upgrade pip and wheel!
     pause
     exit /b 1
 )
 
-python -m pip install setuptools==75.8.2
+call conda run -n %ENV_NAME% --no-capture-output python -m pip install setuptools==75.8.2
 if errorlevel 1 (
     echo [ERROR] Failed to install setuptools!
     pause
@@ -140,7 +202,7 @@ if errorlevel 1 (
 
 REM Install torch requirements
 echo Installing torch requirements...
-pip install -r requirements-torch.txt
+call conda run -n %ENV_NAME% --no-capture-output pip install -r requirements-torch.txt
 if errorlevel 1 (
     echo [ERROR] Failed to install torch requirements!
     pause
@@ -148,18 +210,18 @@ if errorlevel 1 (
 )
 
 
-REM Install requirements.txt
-echo Installing requirements.txt...
-pip install -r requirements.txt
+REM Install dependencies based on config.py settings
+echo Installing dependencies based on config.py settings...
+call conda run -n %ENV_NAME% --no-capture-output python install_dependencies.py
 if errorlevel 1 (
-    echo [ERROR] Failed to install POC requirements!
+    echo [ERROR] Failed to install dependencies!
     pause
     exit /b 1
 )
 
 REM Set CHAT_TO_3D_PATH environment variable using conda Python
 echo Setting CHAT_TO_3D_PATH environment variable...
-call conda run -n trellis --no-capture-output python set_environment_variable.py
+call conda run -n %ENV_NAME% --no-capture-output python set_environment_variable.py
 if errorlevel 1 (
     echo [ERROR] Failed to set CHAT_TO_3D_PATH environment variable!
     pause
@@ -171,7 +233,7 @@ REM Download required models
 echo Downloading required models...
 set CURRENT_DIR=%cd%
 echo current directory: %CURRENT_DIR%
-call conda run -n trellis --no-capture-output python download_models.py
+call conda run -n %ENV_NAME% --no-capture-output python download_models.py
 if errorlevel 1 (
     echo [ERROR] Failed to download models!
     cd "%CURRENT_DIR%"
@@ -305,42 +367,57 @@ if !VERSION_FOUND! equ 0 (
 
 echo Blender addon installation completed successfully!
 
-:: Deactivate conda environment
-echo Deactivating conda environment...
-call conda deactivate
+:: Check if we need to start NIM services
+:: Skip NIM services if using both native LLM and native TRELLIS
+if /i "%USE_NATIVE_LLM%"=="True" if /i "%USE_NATIVE_TRELLIS%"=="True" (
+    echo.
+    echo ========================================
+    echo Skipping NIM services (using native models)
+    echo ========================================
+    echo   USE_NATIVE_LLM: %USE_NATIVE_LLM%
+    echo   USE_NATIVE_TRELLIS: %USE_NATIVE_TRELLIS%
+    echo.
+    echo Native models will be loaded when you run: python app.py
+    echo.
+    goto :installation_complete
+)
 
-:: Start LLM and Trellis services
+:: Start LLM and Trellis NIM services (only if not using native models)
 echo.
 echo ========================================
-echo Starting LLM and Trellis services...
+echo Starting NIM services...
 echo ========================================
 echo This may take several minutes as containers need to download and start...
 
-:: Start LLM service in background
-echo Starting LLM service...
-start /B "LLM Service" cmd /c "call conda activate trellis && python nim_llm\run_llama.py"
-if errorlevel 1 (
-    echo [ERROR] Failed to start LLM service!
-    pause
-    exit /b 1
+:: Start LLM service in background (only if not using native LLM)
+if /i "%USE_NATIVE_LLM%"=="False" (
+    echo Starting LLM NIM service...
+    start /B "LLM Service" cmd /c "conda run -n %ENV_NAME% --no-capture-output python nim_llm\run_llama.py"
+    if errorlevel 1 (
+        echo [ERROR] Failed to start LLM service!
+        pause
+        exit /b 1
+    )
+    echo Waiting 10 seconds for LLM service to initialize...
+    timeout /t 10 /nobreak >nul
+) else (
+    echo Skipping LLM NIM service (using native LLM)
 )
 
-:: Wait a moment for LLM service to initialize
-echo Waiting 10 seconds for LLM service to initialize...
-timeout /t 10 /nobreak >nul
-
-:: Start Trellis service in background
-echo Starting Trellis service...
-start /B "Trellis Service" cmd /c "call conda activate trellis && python nim_trellis\run_trellis.py"
-if errorlevel 1 (
-    echo [ERROR] Failed to start Trellis service!
-    pause
-    exit /b 1
+:: Start Trellis service in background (only if not using native TRELLIS)
+if /i "%USE_NATIVE_TRELLIS%"=="False" (
+    echo Starting Trellis NIM service...
+    start /B "Trellis Service" cmd /c "conda run -n %ENV_NAME% --no-capture-output python nim_trellis\run_trellis.py"
+    if errorlevel 1 (
+        echo [ERROR] Failed to start Trellis service!
+        pause
+        exit /b 1
+    )
+    echo Waiting 10 seconds for Trellis service to initialize...
+    timeout /t 10 /nobreak >nul
+) else (
+    echo Skipping Trellis NIM service (using native TRELLIS)
 )
-
-:: Wait a moment for Trellis service to initialize
-echo Waiting 10 seconds for Trellis service to initialize...
-timeout /t 10 /nobreak >nul
 
 :: Check if Python processes are running
 echo Checking if service processes are running...
@@ -349,24 +426,27 @@ echo.
 
 :: Wait for services to be ready
 echo.
-echo Waiting for services to be ready...
+echo Waiting for NIM services to be ready...
 echo This may take 60-120 minutes for first-time setup...
 
-:: Use conda environment for service checking
-echo Setting up service monitoring environment...
-call conda activate trellis
+:: Use conda environment for service checking (via conda run)
+echo Setting up service monitoring...
 
 set /a attempts=0
 set /a max_attempts=150
 set /a llm_ready=0
 set /a trellis_ready=0
 
+:: If using native, mark as ready
+if /i "%USE_NATIVE_LLM%"=="True" set /a llm_ready=1
+if /i "%USE_NATIVE_TRELLIS%"=="True" set /a trellis_ready=1
+
 :wait_loop
 set /a attempts+=1
 echo Attempt %attempts%/%max_attempts% - Checking services...
 
 :: Use Python health checker
-python check_services.py
+call conda run -n %ENV_NAME% --no-capture-output python check_services.py
 set check_result=%errorlevel%
 
 :: Handle health checker failures gracefully
@@ -385,13 +465,13 @@ if %check_result% equ 0 (
         set /a llm_ready=1
         echo ✅ LLM service is ready!
     )
-    echo Trellis service not ready yet...
+    if /i "%USE_NATIVE_TRELLIS%"=="False" echo Trellis NIM service not ready yet...
 ) else if %check_result% equ 2 (
     if %trellis_ready% equ 0 (
         set /a trellis_ready=1
         echo ✅ Trellis service is ready!
     )
-    echo LLM service not ready yet...
+    if /i "%USE_NATIVE_LLM%"=="False" echo LLM NIM service not ready yet...
 ) else (
     echo Services not ready yet...
 )
@@ -402,8 +482,10 @@ if %llm_ready% equ 1 if %trellis_ready% equ 1 (
     echo 🎉 All services are ready!
     echo.
     echo Services running:
-    echo - LLM Service: http://localhost:19002
-    echo - Trellis Service: http://localhost:8000
+    if /i "%USE_NATIVE_LLM%"=="False" echo - LLM NIM Service: http://localhost:19002
+    if /i "%USE_NATIVE_LLM%"=="True" echo - LLM: Native model (loaded on demand)
+    if /i "%USE_NATIVE_TRELLIS%"=="False" echo - Trellis NIM Service: http://localhost:8000
+    if /i "%USE_NATIVE_TRELLIS%"=="True" echo - Trellis: Native model (loaded on demand)
     echo.
     echo.
     goto :stop_services
@@ -438,23 +520,27 @@ timeout /t 30 /nobreak >nul
 goto :wait_loop
 
 :stop_services
-:: Stop the services automatically
+:: Stop the services automatically (only NIM services that were started)
 echo.
-echo Stopping services...
+echo Stopping NIM services...
 echo ========================================
 
-:: Stop LLM container
-echo Stopping LLM container...
-call conda run -n trellis --no-capture-output python -c "from nim_llm.manager import stop_container; stop_container()"
-if errorlevel 1 (
-    echo [WARNING] Failed to stop LLM container gracefully
+:: Stop LLM container (only if not using native LLM)
+if /i "%USE_NATIVE_LLM%"=="False" (
+    echo Stopping LLM container...
+    call conda run -n %ENV_NAME% --no-capture-output python -c "from nim_llm.manager import stop_container; stop_container()"
+    if errorlevel 1 (
+        echo [WARNING] Failed to stop LLM container gracefully
+    )
 )
 
-:: Stop Trellis container
-echo Stopping Trellis container...
-call conda run -n trellis --no-capture-output python -c "from nim_trellis.manager import stop_container; stop_container()"
-if errorlevel 1 (
-    echo [WARNING] Failed to stop Trellis container gracefully
+:: Stop Trellis container (only if not using native TRELLIS)
+if /i "%USE_NATIVE_TRELLIS%"=="False" (
+    echo Stopping Trellis container...
+    call conda run -n %ENV_NAME% --no-capture-output python -c "from nim_trellis.manager import stop_container; stop_container()"
+    if errorlevel 1 (
+        echo [WARNING] Failed to stop Trellis container gracefully
+    )
 )
 
 :: Kill any remaining Python processes that might be running the services
@@ -470,6 +556,7 @@ echo.
 echo ✅ Services stopped successfully!
 echo.
 
+:installation_complete
 echo Installation completed successfully
 
 pause

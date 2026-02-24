@@ -19,11 +19,18 @@
 import gradio as gr
 import random
 import os
+import torch
+import gc
 from services.image_generation_service import ImageGenerationService
-from services.model_3d_service import Model3DService
+# Model3DService is passed as parameter to handlers, not imported directly
+# This allows app.py to control which implementation is used (NIM vs Native TRELLIS)
 import datetime
 import config
-from utils import clear_image_generation_failure_flags, should_disable_buttons_during_3d_generation
+from utils import clear_image_generation_failure_flags
+
+# Only import GPU manager for native models
+if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+    from services.gpu_memory_manager import get_gpu_memory_manager
 
 def invalidate_3d_model(gallery_data, card_idx, object_name, context="image change"):
     """Invalidate any existing 3D model for a card when the image has changed."""
@@ -70,16 +77,13 @@ def create_convert_all_3d_handler(model_3d_service):
         # Mark all items as being processed in batch mode to disable all buttons
         for idx, obj in enumerate(updated_data):
             updated_data[idx]["batch_processing"] = True
-            
-            # Also mark for global 3D generation if VRAM threshold is met
-            if should_disable_buttons_during_3d_generation():
-                updated_data[idx]["3d_generation_global"] = True
+            updated_data[idx]["3d_generation_global"] = True
         
         print(f"Disabled all buttons for {len(gallery_data)} items during batch 3D conversion")
         return updated_data
     
     def perform_batch_3d_conversion(gallery_data):
-        """Second stage: perform the actual 3D conversion."""
+        """Second stage: perform the actual 3D conversion (non-generator version)."""
         try:
             if not gallery_data:
                 print("No gallery data to process")
@@ -109,6 +113,11 @@ def create_convert_all_3d_handler(model_3d_service):
                 return updated_data
             
             print(f"Converting {total_unconverted} items to 3D...")
+            
+            # Prepare GPU for TRELLIS (moves LLM and SANA to CPU)
+            if config.USE_NATIVE_TRELLIS:
+                gpu_manager = get_gpu_memory_manager()
+                gpu_manager.prepare_for_trellis()
             
             # Second pass: generate 3D models for each unconverted item
             for idx, obj in enumerate(updated_data):
@@ -170,7 +179,107 @@ def create_convert_all_3d_handler(model_3d_service):
                     del updated_data[idx]["3d_generation_global"]
             return updated_data
     
-    return disable_all_buttons, perform_batch_3d_conversion
+    def perform_batch_3d_conversion_with_progress(gallery_data, _unused=None):
+        """Generator version: perform 3D conversion with progress updates.
+        
+        Yields:
+            tuple: (current, total, object_name, updated_data, is_complete, was_cancelled)
+        """
+        try:
+            if not gallery_data:
+                print("No gallery data to process")
+                yield (0, 0, "", gallery_data, True, False)
+                return
+            
+            updated_data = [obj.copy() for obj in gallery_data]
+            converted_count = 0
+            
+            # First pass: identify unconverted items
+            items_to_convert = []
+            for idx, obj in enumerate(updated_data):
+                if not obj.get("glb_path") and not obj.get("content_filtered", False) and obj.get("path"):
+                    items_to_convert.append((idx, obj))
+                    updated_data[idx]["3d_generating"] = True
+            
+            total_unconverted = len(items_to_convert)
+            
+            if total_unconverted == 0:
+                print("All items already have 3D models")
+                for idx in range(len(updated_data)):
+                    updated_data[idx]["batch_processing"] = False
+                    if "3d_generation_global" in updated_data[idx]:
+                        del updated_data[idx]["3d_generation_global"]
+                yield (0, 0, "", updated_data, True, False)
+                return
+            
+            print(f"Converting {total_unconverted} items to 3D...")
+            
+            # Prepare GPU for TRELLIS
+            if config.USE_NATIVE_TRELLIS:
+                gpu_manager = get_gpu_memory_manager()
+                gpu_manager.prepare_for_trellis()
+            
+            # Initial progress yield
+            yield (0, total_unconverted, "Starting...", updated_data, False, False)
+            
+            # Generate 3D models for each item
+            for i, (idx, obj) in enumerate(items_to_convert):
+                
+                object_name = obj["title"]
+                image_path = obj["path"]
+                
+                print(f"  [{i+1}/{total_unconverted}] Converting '{object_name}' to 3D...")
+                
+                output_dir = config.MODELS_DIR
+                success, message, glb_path = model_3d_service.generate_3d_model(
+                    image_path=image_path,
+                    output_dir=output_dir
+                )
+                
+                if success and glb_path:
+                    updated_data[idx]["glb_path"] = glb_path
+                    updated_data[idx]["3d_generated"] = True
+                    updated_data[idx]["3d_timestamp"] = datetime.datetime.now().isoformat()
+                    updated_data[idx]["3d_generating"] = False
+                    converted_count += 1
+                    print(f"  Successfully converted '{object_name}'")
+                elif message == "CONTENT_FILTERED":
+                    updated_data[idx]["3d_generating"] = False
+                    updated_data[idx]["content_filtered"] = True
+                    updated_data[idx]["content_filtered_timestamp"] = datetime.datetime.now().isoformat()
+                    print(f"  Content filtered for '{object_name}'")
+                else:
+                    updated_data[idx]["3d_generating"] = False
+                    print(f"  Failed to convert '{object_name}': {message}")
+                
+                # Force aggressive cleanup between iterations to prevent memory accumulation
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
+                # Yield progress update
+                yield (i + 1, total_unconverted, object_name, updated_data, False, False)
+            
+            # Final cleanup
+            for idx in range(len(updated_data)):
+                updated_data[idx]["batch_processing"] = False
+                if "3d_generation_global" in updated_data[idx]:
+                    del updated_data[idx]["3d_generation_global"]
+            
+            print(f"Batch conversion complete: {converted_count}/{total_unconverted}")
+            yield (total_unconverted, total_unconverted, "Complete", updated_data, True, False)
+            
+        except Exception as e:
+            print(f"Error in batch 3D conversion: {str(e)}")
+            updated_data = [obj.copy() for obj in gallery_data]
+            for idx in range(len(updated_data)):
+                updated_data[idx]["3d_generating"] = False
+                updated_data[idx]["batch_processing"] = False
+                if "3d_generation_global" in updated_data[idx]:
+                    del updated_data[idx]["3d_generation_global"]
+            yield (0, 0, f"Error: {str(e)}", updated_data, True, False)
+    
+    return disable_all_buttons, perform_batch_3d_conversion, perform_batch_3d_conversion_with_progress
 
 def create_image_card(image_path, title, output_widget, modal_image_title, modal_image, modal_visible, settings_modal, overlay):
     """Create a single image card with action buttons and modal trigger."""
@@ -183,11 +292,8 @@ def create_image_card(image_path, title, output_widget, modal_image_title, modal
             image_component = gr.Image(
                 image_path if image_path else None,
                 show_label=False,
-                show_download_button=False,
                 interactive=False,
                 height=180,
-                sources=[],
-                show_fullscreen_button=False,
                 elem_classes=["card-image"]
             )
         
@@ -248,8 +354,17 @@ def create_refresh_handler(image_generation_service):
                 seed=new_seed
             )
 
-            if image_generation_service.if_sana_pipeline_movement_required():
-                image_generation_service.move_sana_pipeline_to_cpu()
+            # Move SANA to CPU after image generation to free GPU memory
+            # This prevents system slowdown when Gradio displays the image
+            image_generation_service.move_sana_pipeline_to_cpu()
+            
+            # Ensure GPU operations complete before Gradio displays image
+            import torch
+            import gc
+            if torch.cuda.is_available():
+                # Note: Removed synchronize() - it blocks system-wide
+                torch.cuda.empty_cache()
+                gc.collect()
 
             invalidate_reason = None
             
@@ -333,6 +448,11 @@ def create_3d_generation_handler(model_3d_service):
             
             # Set output directory for generated 3D models
             output_dir = config.MODELS_DIR
+            
+            # Prepare GPU for TRELLIS (moves LLM and SANA to CPU)
+            if config.USE_NATIVE_TRELLIS:
+                gpu_manager = get_gpu_memory_manager()
+                gpu_manager.prepare_for_trellis()
               
             # Generate 3D model using Model3DService
             success, message, glb_path = model_3d_service.generate_3d_model(

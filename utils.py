@@ -116,30 +116,20 @@ def is_llm_should_be_stopped(vram_threshold = config.VRAM_THRESHOLD_LLM):
     return check_gpu_vram_capacity(vram_threshold)
 
 
-def should_disable_buttons_during_3d_generation(vram_threshold = config.VRAM_THRESHOLD_DISABLE_IMAGE_GEN_DURING_3D_GENERATION):
-    """Check if buttons should be disabled during 3D generation based on VRAM threshold."""
-    return check_gpu_vram_capacity(vram_threshold)
-
-
 def disable_all_buttons_for_3d_generation(gallery_data):
-    """Disable all edit and refresh buttons on all cards when 3D generation is in progress."""
-    if not should_disable_buttons_during_3d_generation():
-        return gallery_data
-    
+    """Disable all buttons on all cards when 3D generation is in progress."""
     updated_data = gallery_data.copy()
     
     # Mark all items as having 3D generation in progress to disable buttons
     for idx, obj in enumerate(updated_data):
         updated_data[idx]["3d_generation_global"] = True
     
-    print(f"🔒 Disabled all edit/refresh buttons for {len(gallery_data)} items during 3D generation (VRAM threshold met)")
+    print(f"🔒 Disabled all buttons for {len(gallery_data)} items during 3D generation")
     return updated_data
 
 
 def enable_all_buttons_after_3d_generation(gallery_data):
-    """Re-enable all edit and refresh buttons on all cards after 3D generation completes."""
-    if not should_disable_buttons_during_3d_generation():
-        return gallery_data
+    """Re-enable all buttons on all cards after 3D generation completes."""
     updated_data = gallery_data.copy()
 
     # if any of the items still has 3d_generating flag, do not re-enable buttons
@@ -153,7 +143,7 @@ def enable_all_buttons_after_3d_generation(gallery_data):
         if "3d_generation_global" in updated_data[idx]:
             del updated_data[idx]["3d_generation_global"]
     
-    print(f"🔓 Re-enabled all edit/refresh buttons for {len(gallery_data)} items after 3D generation")
+    print(f"🔓 Re-enabled all buttons for {len(gallery_data)} items after 3D generation")
     return updated_data
 
 

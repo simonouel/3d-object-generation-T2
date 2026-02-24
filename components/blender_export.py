@@ -205,12 +205,19 @@ def create_export_modal():
                 elem_classes=["scene-folder-input"]
             )
             
+            # Error message (hidden by default)
+            error_message = gr.HTML(
+                value="",
+                visible=False,
+                elem_classes=["export-error-message"]
+            )
+            
             # Action buttons
             with gr.Row():
                 cancel_btn = gr.Button("Cancel", variant="secondary", elem_classes=["modal-cancel-btn"])
                 save_btn = gr.Button("Save & Export", variant="primary", elem_classes=["modal-save-btn"])
             
-    return export_modal, scene_folder_input, cancel_btn, save_btn
+    return export_modal, scene_folder_input, error_message, cancel_btn, save_btn
 
 
 
@@ -228,16 +235,22 @@ def open_export_modal(gallery_data):
     return gr.update(visible=True)
 
 def close_export_modal():
-    """Close the export modal."""
-    return gr.update(visible=False), ""
+    """Close the export modal and clear error message."""
+    return gr.update(visible=False), "", gr.update(visible=False)
 
 def export_3d_assets_to_folder(gallery_data, folder_name):
-    """Export all 3D assets to a specified folder within ASSETS_DIR."""
+    """Export all 3D assets to a specified folder within ASSETS_DIR.
+    
+    Returns:
+        tuple: (modal_update, error_message_update) or just modal_update on success
+    """
     if not gallery_data:
-        return gr.update(visible=False)
+        return gr.update(visible=False), gr.update(visible=False)
     
     if not folder_name or not folder_name.strip():
-        return gr.update(visible=False)
+        # Show error message instead of closing
+        error_html = "<div style='color: #dc2626; font-size: 14px; padding: 8px 0;'>⚠️ Folder name cannot be empty</div>"
+        return gr.update(visible=True), gr.update(value=error_html, visible=True)
     
     # Filter for objects that have 3D models
     exportable_objects = []
@@ -246,7 +259,7 @@ def export_3d_assets_to_folder(gallery_data, folder_name):
             exportable_objects.append(obj)
     
     if not exportable_objects:
-        return gr.update(visible=False)
+        return gr.update(visible=False), gr.update(visible=False)
     
     try:
         # Create clean folder name
@@ -270,7 +283,7 @@ def export_3d_assets_to_folder(gallery_data, folder_name):
                 shutil.copy2(glb_path, target_path)
                 exported_files.append(target_filename)
         
-        return gr.update(visible=False)
+        return gr.update(visible=False), gr.update(visible=False)
     
     except Exception as e:
-        return gr.update(visible=False) 
+        return gr.update(visible=False), gr.update(visible=False) 
