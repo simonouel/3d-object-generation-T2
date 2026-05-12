@@ -15,9 +15,67 @@ The 3D Object Generation Blueprint is an end-to-end generative AI workflow that 
 - **GPU memory management** - Intelligent model loading/unloading
 - VRAM management with model termination
 
-## Installation 
+## Installation
 
-### Prerequisites
+Two platforms are supported: **Windows 10/11** and **Linux EL9.4+** (Rocky Linux, RHEL, AlmaLinux).
+
+---
+
+### Linux EL9.4+ (Rocky Linux / RHEL / AlmaLinux)
+
+#### Prerequisites
+
+- **Rocky Linux 9.4 / RHEL 9.4 / AlmaLinux 9.4** or newer
+- **NVIDIA GPU** (RTX 4080 or higher recommended) with drivers already installed
+- **~50 GB disk space** for AI models
+- **HuggingFace Account** (free) — required for some models ([create account](https://huggingface.co/join), [generate token](https://huggingface.co/settings/tokens))
+- Root / sudo access
+
+#### Install
+
+Clone the repository with submodules, then run the installer as root:
+
+```bash
+git clone --recurse-submodules https://github.com/NVIDIA-AI-Blueprints/3d-object-generation.git
+cd 3d-object-generation
+
+sudo HF_TOKEN=hf_xxx bash install.sh
+```
+
+The installer will:
+1. Install system packages via `dnf` (Python 3.11, build tools, OpenGL libs)
+2. Install CUDA 12.8 toolkit if not already present
+3. Create a Python 3.11 virtual environment at `.venv/`
+4. Install PyTorch 2.7.0 (CUDA 12.8) and all Python dependencies
+5. **Ask whether to use a local LLM or an existing OpenAI-compatible API** (vLLM, llama.cpp, Ollama…)
+6. Build TRELLIS 2 CUDA extensions from source (~10–20 min)
+7. Download AI models (~20 GB)
+8. Install and start a `systemd` service (`3d-object-generation`)
+
+**Installer options:**
+
+```bash
+# Skip model download (run python download_models.py manually later)
+sudo HF_TOKEN=hf_xxx SKIP_MODELS=1 bash install.sh
+```
+
+**Useful commands after install:**
+
+```bash
+systemctl status  3d-object-generation
+systemctl restart 3d-object-generation
+journalctl -u 3d-object-generation -f
+```
+
+The application is available at `http://localhost:7860` once the service is running.
+
+> **Note:** TRELLIS 2 CUDA extensions (nvdiffrast, nvdiffrec, CuMesh, FlexGEMM, o-voxel) are built from source. CUDA 12.8 must be present before running `install.sh`.
+
+---
+
+### Windows 10/11
+
+#### Prerequisites
 
 Before you begin, ensure you have:
 
@@ -29,9 +87,7 @@ Before you begin, ensure you have:
 
 > **Note:** TRELLIS 2 CUDA extensions (nvdiffrast, nvdiffrec, CuMesh, FlexGEMM, o-voxel) are built from source during installation. Ensure CUDA 12.8 and Visual Studio Build Tools are installed before running the installer.
 
----
-
-### Installation
+#### Install
 
 **Step 1:** Clone the repository with submodules:
 
@@ -82,7 +138,7 @@ The setup script will automatically:
 
 ---
 
-### Install Blender
+### Install Blender (Windows)
 
 This blueprint requires Blender 4.2+ for the add-on integration. You can download and install manually from:
 - [Blender 4.2.7 LTS](https://www.blender.org/download/release/Blender4.2/blender-4.2.7-windows-x64.msi)
@@ -256,10 +312,23 @@ Once the application is running, you can:
 
 ```python
 # =============================================================================
-# LLM Settings
+# LLM Backend
+# =============================================================================
+USE_NATIVE_LLM = True                  # True = local PyTorch model; False = NIM
+USE_OPENAI_COMPATIBLE_LLM = False      # True = use remote OpenAI-compatible API
+                                       # (overrides USE_NATIVE_LLM when True)
+
+# =============================================================================
+# Local LLM Settings (when USE_NATIVE_LLM = True)
 # =============================================================================
 NATIVE_LLM_MODEL = "Qwen/Qwen3-4B"    # HuggingFace model ID
 NATIVE_LLM_PRECISION = "bfloat16"      # float16, bfloat16, or int4 (for GPTQ)
+
+# =============================================================================
+# OpenAI-compatible API Settings (when USE_OPENAI_COMPATIBLE_LLM = True)
+# =============================================================================
+OPENAI_COMPATIBLE_BASE_URL = "http://lx-gpu-001.vfx.priv:8000/v1"  # vLLM endpoint
+OPENAI_COMPATIBLE_MODEL = "default"    # model name served by the endpoint
 
 # =============================================================================
 # Logging
@@ -274,23 +343,23 @@ VERBOSE = False                        # Detailed timing/memory logs
 ### Common Issues
 
 1. **CUDA not found during installation**
-   - Ensure CUDA 12.8 is installed from [NVIDIA CUDA Downloads](https://developer.nvidia.com/cuda-12-8-0-download-archive?target_os=Windows&target_arch=x86_64)
-   - If the installer can't auto-detect CUDA, set `CUDA_HOME` before running `install.bat`:
-     ```powershell
-     # PowerShell
-     $env:CUDA_HOME = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"
-     ```
-     ```cmd
-     # Command Prompt
-     set CUDA_HOME=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8
-     ```
-   - Verify your CUDA installation path:
-     ```powershell
-     Get-ChildItem "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\"
-     ```
+
+   *Linux:* The installer auto-detects CUDA at `/usr/local/cuda-12.8`, `/usr/local/cuda`, or via `nvcc`. If not found, install it first:
+   ```bash
+   # CUDA repo for RHEL/Rocky 9
+   dnf config-manager --add-repo \
+     https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo
+   dnf install -y cuda-toolkit-12-8
+   ```
+
+   *Windows:* Ensure CUDA 12.8 is installed and set `CUDA_HOME` before running the installer:
+   ```powershell
+   $env:CUDA_HOME = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"
+   ```
 
 2. **Out of VRAM**
    - Use a smaller LLM model: Qwen3-4B instead of Llama-3.1-8B
+   - Or point to an external vLLM server (`USE_OPENAI_COMPATIBLE_LLM = True`) to offload LLM inference entirely
    - Close other GPU-using applications
    - The application automatically moves inactive models to CPU
 
@@ -299,7 +368,9 @@ VERBOSE = False                        # Detailed timing/memory logs
    - Check `requirements.txt` has `gradio==5.50.0`
 
 4. **Model download fails**
-   - Set HuggingFace token: `set HF_TOKEN=your_token`
+   - Set HuggingFace token:
+     - Linux: `sudo HF_TOKEN=hf_xxx bash install.sh`
+     - Windows: `set HF_TOKEN=your_token`
    - Check internet connection
 
 5. **TRELLIS 2 import errors**
@@ -307,14 +378,27 @@ VERBOSE = False                        # Detailed timing/memory logs
    - Ensure TRELLIS 2 dependencies are installed: `python install_dependencies.py`
    - Verify the `trellis2` module is importable: `python -c "from trellis2.pipelines import Trellis2ImageTo3DPipeline"`
 
-6. **Installation Issues**:
+6. **OpenAI-compatible LLM endpoint not reachable**
+   - Verify the endpoint is running: `curl http://<host>:8000/v1/models`
+   - Check `OPENAI_COMPATIBLE_BASE_URL` in `config.py`
+   - On Linux, check the systemd environment override: `systemctl cat 3d-object-generation`
+
+7. **Installation Issues (Windows)**:
    - Run PowerShell as Administrator
    - Check if Python is in your system PATH
    - Verify Visual Studio Build Tools installation
 
+8. **Service not starting (Linux)**:
+   ```bash
+   journalctl -u 3d-object-generation -n 50
+   ```
+   - Ensure the `.venv/` directory was created by the installer
+   - Re-run TRELLIS 2 CUDA extensions build: `source .venv/bin/activate && python install_dependencies.py`
+
 ### Logs
 
-- Application logs: Console output
+- *Linux:* `journalctl -u 3d-object-generation -f`
+- *Windows:* Console output
 - Verbose logging: Set `VERBOSE = True` in `config.py`
 
 ## Acknowledgments
