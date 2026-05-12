@@ -23,8 +23,9 @@ import config
 from .image_generation_service import ImageGenerationService
 
 # Conditional import: AgentService
-# Use native PyTorch LLM or NIM-based LLM based on config
-if config.USE_NATIVE_LLM:
+if getattr(config, 'USE_OPENAI_COMPATIBLE_LLM', False):
+    from .openai_agent_service import OpenAIAgentService as AgentService
+elif config.USE_NATIVE_LLM:
     from .native_agent_service import NativeAgentService as AgentService
 else:
     from .agent_service import AgentService

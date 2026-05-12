@@ -42,6 +42,12 @@ USE_NATIVE_LLM = True
 #   - False: Use Trellis NIM service (requires running NIM container)
 USE_NATIVE_TRELLIS = True
 
+# USE_OPENAI_COMPATIBLE_LLM: Use an OpenAI-compatible API instead of a local LLM
+#   - True:  Use remote OpenAI-compatible endpoint (vLLM, llama.cpp, Ollama, etc.)
+#   - False: Use native or NIM backend (see USE_NATIVE_LLM above)
+#   When True, USE_NATIVE_LLM is ignored.
+USE_OPENAI_COMPATIBLE_LLM = False
+
 
 # #############################################################################
 #                          NIM CONFIGURATION
@@ -81,6 +87,15 @@ NATIVE_LLM_PRECISION = "bfloat16"
 
 NATIVE_LLM_MAX_NEW_TOKENS = 1024  # Maximum tokens to generate
 NATIVE_LLM_DEVICE = "cuda:0"  # Device to load model on
+
+# -----------------------------------------------------------------------------
+# OpenAI-Compatible LLM Settings (used when USE_OPENAI_COMPATIBLE_LLM = True)
+# -----------------------------------------------------------------------------
+# Base URL of the OpenAI-compatible API (e.g. vLLM, llama.cpp, Ollama)
+OPENAI_COMPATIBLE_BASE_URL = "http://localhost:8000/v1"
+# Model name to pass in API requests (use the model name served by vLLM, or
+# "default" if the server ignores it — e.g. llama.cpp)
+OPENAI_COMPATIBLE_MODEL = "default"
 
 # -----------------------------------------------------------------------------
 # Native TRELLIS Settings (used when USE_NATIVE_TRELLIS = True)

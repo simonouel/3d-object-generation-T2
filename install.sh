@@ -50,6 +50,30 @@ fi
 RUN_HOME=$(getent passwd "$RUN_USER" | cut -d: -f6)
 log "Service will run as user: $RUN_USER"
 
+# --- LLM backend selection ---------------------------------------------------
+OPENAI_URL=""
+OPENAI_MODEL=""
+USE_OPENAI_LLM=0
+
+echo ""
+echo "  LLM Backend Selection"
+echo "  ─────────────────────"
+echo "  Option A: Run a local LLM on this machine (requires extra GPU VRAM)"
+echo "  Option B: Use an existing OpenAI-compatible API (vLLM, llama.cpp, Ollama...)"
+echo ""
+read -rp "  Do you have an OpenAI-compatible API endpoint? [y/N] " _ans_openai
+if [[ "$_ans_openai" =~ ^[Yy]$ ]]; then
+    read -rp "  API base URL (e.g. http://lx-gpu-001.vfx.priv:8000/v1): " OPENAI_URL
+    OPENAI_URL="${OPENAI_URL:-http://localhost:8000/v1}"
+    read -rp "  Model name served (leave blank for 'default'): " OPENAI_MODEL
+    OPENAI_MODEL="${OPENAI_MODEL:-default}"
+    USE_OPENAI_LLM=1
+    info "Using OpenAI-compatible endpoint: $OPENAI_URL (model: $OPENAI_MODEL)"
+else
+    info "Using local LLM (native PyTorch)"
+fi
+echo ""
+
 # --- GPU check ---------------------------------------------------------------
 info "Checking NVIDIA GPU..."
 command -v nvidia-smi &>/dev/null || die "nvidia-smi not found. Install NVIDIA drivers before running this script."
@@ -125,6 +149,41 @@ info "Installing Python dependencies..."
 
 log "Python dependencies installed"
 
+# --- Apply LLM backend config ------------------------------------------------
+if [[ "$USE_OPENAI_LLM" -eq 1 ]]; then
+    info "Configuring OpenAI-compatible LLM backend in config.py..."
+    "$PYTHON" - <<PYEOF
+import re, sys
+
+config_path = "$REPO_DIR/config.py"
+with open(config_path, 'r') as f:
+    content = f.read()
+
+content = re.sub(
+    r'USE_OPENAI_COMPATIBLE_LLM\s*=\s*\S+',
+    'USE_OPENAI_COMPATIBLE_LLM = True',
+    content
+)
+content = re.sub(
+    r'OPENAI_COMPATIBLE_BASE_URL\s*=\s*"[^"]*"',
+    'OPENAI_COMPATIBLE_BASE_URL = "$OPENAI_URL"',
+    content
+)
+content = re.sub(
+    r'OPENAI_COMPATIBLE_MODEL\s*=\s*"[^"]*"',
+    'OPENAI_COMPATIBLE_MODEL = "$OPENAI_MODEL"',
+    content
+)
+
+with open(config_path, 'w') as f:
+    f.write(content)
+print("  config.py updated: USE_OPENAI_COMPATIBLE_LLM = True")
+print("  OPENAI_COMPATIBLE_BASE_URL = '$OPENAI_URL'")
+print("  OPENAI_COMPATIBLE_MODEL = '$OPENAI_MODEL'")
+PYEOF
+    log "LLM backend configured"
+fi
+
 # --- TRELLIS 2 CUDA extensions -----------------------------------------------
 info "Building TRELLIS 2 CUDA extensions (this takes 10–20 min)..."
 export CUDA_HOME
@@ -169,6 +228,7 @@ Environment="PYTHONUNBUFFERED=1"
 Environment="OPENCV_IO_ENABLE_OPENEXR=1"
 Environment="PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
 Environment="HF_TOKEN=${HF_TOKEN:-}"
+Environment="OPENAI_COMPATIBLE_BASE_URL=${OPENAI_URL:-}"
 ExecStart=$VENV_DIR/bin/python $REPO_DIR/app.py
 Restart=on-failure
 RestartSec=30
