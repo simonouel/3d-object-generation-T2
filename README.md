@@ -37,7 +37,7 @@ Clone the repository with submodules, then run the installer as root:
 
 ```bash
 git clone --recurse-submodules https://github.com/simonouel/3d-object-generation-T2.git
-cd 3d-object-generation
+cd 3d-object-generation-T2
 
 sudo HF_TOKEN=hf_xxx bash install.sh
 ```
