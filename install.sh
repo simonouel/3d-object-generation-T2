@@ -65,10 +65,9 @@ read -rp "  Do you have an OpenAI-compatible API endpoint? [y/N] " _ans_openai
 if [[ "$_ans_openai" =~ ^[Yy]$ ]]; then
     read -rp "  API base URL (e.g. http://lx-gpu-001.vfx.priv:8000/v1): " OPENAI_URL
     OPENAI_URL="${OPENAI_URL:-http://localhost:8000/v1}"
-    read -rp "  Model name served (leave blank for 'default'): " OPENAI_MODEL
-    OPENAI_MODEL="${OPENAI_MODEL:-default}"
+    OPENAI_MODEL="default"
     USE_OPENAI_LLM=1
-    info "Using OpenAI-compatible endpoint: $OPENAI_URL (model: $OPENAI_MODEL)"
+    info "Using OpenAI-compatible endpoint: $OPENAI_URL (model will be auto-detected at startup)"
 else
     info "Using local LLM (native PyTorch)"
 fi

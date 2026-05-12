@@ -47,7 +47,7 @@ The installer will:
 2. Install CUDA 12.8 toolkit if not already present
 3. Create a Python 3.11 virtual environment at `.venv/`
 4. Install PyTorch 2.7.0 (CUDA 12.8) and all Python dependencies
-5. **Ask whether to use a local LLM or an existing OpenAI-compatible API** (vLLM, llama.cpp, Ollama…)
+5. **Ask whether to use a local LLM or an existing OpenAI-compatible API** (vLLM, llama.cpp, Ollama…) — the served model is auto-detected from `/v1/models` at startup, no model name needed
 6. Build TRELLIS 2 CUDA extensions from source (~10–20 min)
 7. Download AI models (~20 GB)
 8. Install and start a `systemd` service (`3d-object-generation`)
@@ -328,7 +328,7 @@ NATIVE_LLM_PRECISION = "bfloat16"      # float16, bfloat16, or int4 (for GPTQ)
 # OpenAI-compatible API Settings (when USE_OPENAI_COMPATIBLE_LLM = True)
 # =============================================================================
 OPENAI_COMPATIBLE_BASE_URL = "http://lx-gpu-001.vfx.priv:8000/v1"  # vLLM endpoint
-OPENAI_COMPATIBLE_MODEL = "default"    # model name served by the endpoint
+OPENAI_COMPATIBLE_MODEL = "default"    # "default" = auto-detect from /v1/models at startup
 
 # =============================================================================
 # Logging

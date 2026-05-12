@@ -29,10 +29,24 @@ class OpenAIAgentService:
         base_url = getattr(config, 'OPENAI_COMPATIBLE_BASE_URL', 'http://localhost:8000/v1')
         model    = getattr(config, 'OPENAI_COMPATIBLE_MODEL', 'default')
 
-        self._client = OpenAI(base_url=base_url, api_key="EMPTY")
-        self._model  = model
+        self._client   = OpenAI(base_url=base_url, api_key="EMPTY")
         self._base_url = base_url
-        logger.info(f"OpenAIAgentService: endpoint={base_url}, model={model}")
+        self._model    = self._resolve_model(model)
+        logger.info(f"OpenAIAgentService: endpoint={base_url}, model={self._model}")
+
+    def _resolve_model(self, configured: str) -> str:
+        """Return the model to use, auto-detecting from /v1/models when configured is 'default'."""
+        if configured and configured != "default":
+            return configured
+        try:
+            models = self._client.models.list().data
+            if models:
+                detected = models[0].id
+                logger.info(f"Auto-detected model from endpoint: {detected}")
+                return detected
+        except Exception as e:
+            logger.warning(f"Could not auto-detect model from endpoint: {e}")
+        return configured  # fall back to "default" so the server decides
 
     # ------------------------------------------------------------------
     # Internal helpers
