@@ -30,12 +30,13 @@ import torch
 from PIL import Image
 
 # Add trellis submodule to Python path
-TRELLIS_PATH = Path(__file__).parent.parent / "trellis"
-if str(TRELLIS_PATH) not in sys.path:
-    sys.path.insert(0, str(TRELLIS_PATH))
+TRELLIS2_PATH = Path(__file__).parent.parent / "TRELLIS.2"
+if str(TRELLIS2_PATH) not in sys.path:
+    sys.path.insert(0, str(TRELLIS2_PATH))
 
-# Set TRELLIS environment variables before importing
-os.environ['SPCONV_ALGO'] = 'native'  # Faster for single runs
+# Set TRELLIS 2 environment variables before importing
+os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +132,7 @@ class Model3DService:
     """
     
     # Default model (can be overridden by config.NATIVE_TRELLIS_MODEL)
-    DEFAULT_MODEL = "microsoft/TRELLIS-image-large"
+    DEFAULT_MODEL = "microsoft/TRELLIS.2-4B"
     
     def __init__(self, base_url: str = "http://localhost:8000"):
         """Initialize the 3D model service.
@@ -162,9 +163,9 @@ class Model3DService:
         if self._imports_done:
             return
             
-        global TrellisImageTo3DPipeline, postprocessing_utils
-        from trellis.pipelines import TrellisImageTo3DPipeline
-        from trellis.utils import postprocessing_utils
+        global Trellis2ImageTo3DPipeline, o_voxel
+        from trellis2.pipelines import Trellis2ImageTo3DPipeline
+        import o_voxel
         
         self._imports_done = True
         
@@ -198,8 +199,8 @@ class Model3DService:
             load_start = time.time()
             
             # Load pipeline from HuggingFace
-            logger.info(f"Loading TRELLIS model: {self.model_name}")
-            self.pipeline = TrellisImageTo3DPipeline.from_pretrained(self.model_name)
+            logger.info(f"Loading TRELLIS 2 model: {self.model_name}")
+            self.pipeline = Trellis2ImageTo3DPipeline.from_pretrained(self.model_name)
             self.pipeline.cuda()
             
             self._load_time = time.time() - load_start
@@ -259,7 +260,9 @@ class Model3DService:
             run_start = time.time()
             
             # Run the pipeline
-            outputs = self.pipeline.run(image, seed=1)
+            mesh_list = self.pipeline.run(image, seed=1)
+            mesh = mesh_list[0]
+            mesh.simplify(16777216)
             
             run_time = time.time() - run_start
             
@@ -277,11 +280,20 @@ class Model3DService:
             
             # Export GLB
             export_start = time.time()
-            glb = postprocessing_utils.to_glb(
-                outputs['gaussian'][0],
-                outputs['mesh'][0],
-                simplify=0.95,
+            glb = o_voxel.postprocess.to_glb(
+                vertices=mesh.vertices,
+                faces=mesh.faces,
+                attr_volume=mesh.attrs,
+                coords=mesh.coords,
+                attr_layout=mesh.layout,
+                voxel_size=mesh.voxel_size,
+                aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
+                decimation_target=1000000,
                 texture_size=1024,
+                remesh=True,
+                remesh_band=1,
+                remesh_project=0,
+                verbose=VERBOSE,
             )
             glb.export(glb_path)
             
@@ -291,7 +303,7 @@ class Model3DService:
             logger.info(f"Saved 3D model to: {glb_path}")
             
             # Clear intermediate tensors to free memory - aggressive cleanup
-            del outputs
+            del mesh_list, mesh
             del glb
             gc.collect()  # Force garbage collection
             clear_gpu_cache()
@@ -421,16 +433,22 @@ class Model3DService:
     def move_to_cpu(self):
         """Move pipeline to CPU to free GPU memory."""
         if self.pipeline is not None:
-            self.pipeline.cpu()
+            for model in self.pipeline.models.values():
+                model.to('cpu')
+            if hasattr(self.pipeline, 'image_cond_model'):
+                self.pipeline.image_cond_model.to('cpu')
+            if hasattr(self.pipeline, 'rembg_model') and self.pipeline.rembg_model is not None:
+                self.pipeline.rembg_model.to('cpu')
+            self.pipeline._device = 'cpu'
             gc.collect()
             torch.cuda.empty_cache()
-            logger.info("TRELLIS pipeline moved to CPU")
+            logger.info("TRELLIS 2 pipeline moved to CPU")
     
     def move_to_gpu(self):
         """Move pipeline back to GPU."""
         if self.pipeline is not None:
-            self.pipeline.cuda()
-            logger.info("TRELLIS pipeline moved to GPU")
+            self.pipeline._device = 'cuda'
+            logger.info("TRELLIS 2 pipeline device set to CUDA")
 
 
 # =============================================================================

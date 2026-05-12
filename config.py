@@ -86,7 +86,7 @@ NATIVE_LLM_DEVICE = "cuda:0"  # Device to load model on
 # Native TRELLIS Settings (used when USE_NATIVE_TRELLIS = True)
 # -----------------------------------------------------------------------------
 # Native TRELLIS model name (from HuggingFace)
-NATIVE_TRELLIS_MODEL = "microsoft/TRELLIS-image-large"
+NATIVE_TRELLIS_MODEL = "microsoft/TRELLIS.2-4B"
 
 # GPU Memory Settings
 # Prevent PyTorch from using shared memory (system RAM) - only use dedicated VRAM
@@ -177,6 +177,9 @@ DEFAULT_CFG_STRENGTH = 7.5
 MAX_PROMPT_LENGTH = 50
 
 # TRELLIS pipeline settings (for NIM)
+# NOTE: NIM container for TRELLIS 2 is not yet available.
+# The constants below are for TRELLIS v1 NIM mode only (model_3d_service.py).
+# When USE_NATIVE_TRELLIS = True, only NATIVE_TRELLIS_MODEL is used.
 TRELLIS_TEXT_LARGE_MODEL = "JeffreyXiang/TRELLIS-text-large"
 TRELLIS_TEXT_BASE_MODEL = "JeffreyXiang/TRELLIS-text-base"
 TRELLIS_IMAGE_LARGE_MODEL = "microsoft/TRELLIS-image-large"
@@ -187,9 +190,6 @@ TRELLIS_MODEL_NAME_MAP = {
     "TRELLIS-text-base": TRELLIS_TEXT_BASE_MODEL
 }
 DEFAULT_TRELLIS_MODEL = "TRELLIS-text-large"
-
-# Algorithm configuration
-SPCONV_ALGO = "spconv2"
 
 # -----------------------------------------------------------------------------
 # Logging

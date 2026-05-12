@@ -22,6 +22,8 @@ Usage:
 import subprocess
 import sys
 import os
+import tempfile
+import shutil
 from pathlib import Path
 
 
@@ -141,88 +143,97 @@ def setup_cuda_env() -> bool:
     return False
 
 
-def install_cuda_extension(name: str, pip_url: str) -> bool:
-    """Install a single CUDA extension from source.
-    
+def install_cuda_extension_from_git(name: str, git_url: str, branch: str = None, recursive: bool = False) -> bool:
+    """Clone a git repo and install it.
+
     Args:
         name: Display name of the extension
-        pip_url: The pip install URL (git+https://...)
-    
+        git_url: The git repository URL
+        branch: Optional branch or tag to check out
+        recursive: Whether to clone submodules recursively
+
     Returns:
         True if installation succeeded, False otherwise
     """
     print(f"\n  Installing {name}...")
-    print(f"    pip install --no-build-isolation {pip_url}")
-    
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--no-build-isolation", pip_url],
-        capture_output=False
-    )
-    
-    if result.returncode == 0:
-        print(f"  ✓ {name} installed successfully")
-        return True
-    else:
-        print(f"  ✗ {name} installation failed!")
-        return False
+    with tempfile.TemporaryDirectory() as tmpdir:
+        clone_cmd = ["git", "clone"]
+        if branch:
+            clone_cmd += ["-b", branch]
+        if recursive:
+            clone_cmd += ["--recursive"]
+        clone_cmd += [git_url, tmpdir + "/" + name]
+        result = subprocess.run(clone_cmd, capture_output=False)
+        if result.returncode != 0:
+            print(f"  Failed to clone {name}")
+            return False
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--no-build-isolation", tmpdir + "/" + name],
+            capture_output=False
+        )
+        if result.returncode == 0:
+            print(f"  {name} installed successfully")
+            return True
+        else:
+            print(f"  {name} installation failed")
+            return False
 
 
 def install_trellis_extensions() -> bool:
-    """Install TRELLIS CUDA extensions from source.
-    
+    """Install TRELLIS 2 CUDA extensions from source.
+
     These extensions must be built from source to support the user's
     specific CUDA version and GPU architecture.
-    
+
     Extensions:
-        - vox2seq: Voxel to sequence conversion
-        - nvdiffrast: NVIDIA differentiable rasterizer
-        - diffoctreerast: Differentiable octree rasterization
-        - gsplat: Gaussian splatting renderer (Apache-2.0 licensed)
+        - nvdiffrast v0.4.0: NVIDIA differentiable rasterizer
+        - nvdiffrec (renderutils branch): Differentiable mesh reconstruction utilities
+        - CuMesh: CUDA mesh processing library
+        - FlexGEMM: Flexible GEMM CUDA kernels
+        - o-voxel: Occupancy voxel library (local package in TRELLIS.2 repo)
     """
     print(f"\n{'='*60}")
-    print("Installing TRELLIS CUDA Extensions")
+    print("Installing TRELLIS 2 CUDA Extensions")
     print("(Building from source - this may take several minutes)")
     print(f"{'='*60}")
-    
+
     # Ensure CUDA_HOME is set
     if not setup_cuda_env():
         print("\n  ERROR: Cannot install CUDA extensions without CUDA_HOME!")
         return False
-    
-    # Get script directory for relative path resolution
-    script_dir = Path(__file__).parent
-    
-    # gsplat prebuilt wheel path (included in project)
-    gsplat_wheel = script_dir / "gsplat_wheel" / "gsplat-1.4.0-cp311-cp311-win_amd64.whl"
-    
-    # Define extensions to install (with pinned git commits for reproducibility)
-    # Note: gsplat replaces diff-gaussian-rasterization (INRIA license) with Apache-2.0 licensed alternative
-    #       gsplat is installed from a prebuilt wheel with precompiled CUDA kernels for sm_86, sm_89, sm_120
-    extensions = [
-        (
-            "vox2seq",
-            "git+https://huggingface.co/spaces/dkatz2391/TRELLIS_TextTo3D_Try2@f29eac513da77cf6e2c185f52180bb245df11c8a#subdirectory=extensions/vox2seq"
-        ),
-        (
-            "nvdiffrast",
-            "git+https://github.com/NVlabs/nvdiffrast.git@253ac4fcea7de5f396371124af597e6cc957bfae"
-        ),
-        (
-            "diffoctreerast",
-            "git+https://github.com/JeffreyXiang/diffoctreerast.git@b09c20b84ec3aace4729e6e18a613112320eca3a"
-        ),
-        (
-            "gsplat (prebuilt wheel with sm_86, sm_89, sm_120)",
-            str(gsplat_wheel)
-        ),
-    ]
-    
+
     all_success = True
-    for i, (name, url) in enumerate(extensions, 1):
-        print(f"\n[{i}/{len(extensions)}] ", end="")
-        if not install_cuda_extension(name, url):
-            all_success = False
-    
+
+    # nvdiffrast v0.4.0
+    if not install_cuda_extension_from_git("nvdiffrast", "https://github.com/NVlabs/nvdiffrast.git", branch="v0.4.0"):
+        all_success = False
+
+    # nvdiffrec (renderutils branch)
+    if not install_cuda_extension_from_git("nvdiffrec", "https://github.com/JeffreyXiang/nvdiffrec.git", branch="renderutils"):
+        all_success = False
+
+    # CuMesh
+    if not install_cuda_extension_from_git("CuMesh", "https://github.com/JeffreyXiang/CuMesh.git", recursive=True):
+        all_success = False
+
+    # FlexGEMM
+    if not install_cuda_extension_from_git("FlexGEMM", "https://github.com/JeffreyXiang/FlexGEMM.git", recursive=True):
+        all_success = False
+
+    # o-voxel (local package in TRELLIS.2 repo)
+    script_dir = Path(__file__).parent
+    ovoxel_path = script_dir / "TRELLIS.2" / "o-voxel"
+    print(f"\n  Installing o-voxel from {ovoxel_path}...")
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--no-build-isolation", str(ovoxel_path)],
+        capture_output=False
+    )
+    if result.returncode == 0:
+        print("  o-voxel installed successfully")
+    else:
+        print("  o-voxel installation failed")
+        all_success = False
+
     print(f"\n{'='*60}")
     if all_success:
         print("✓ All CUDA extensions installed successfully!")
@@ -230,7 +241,7 @@ def install_trellis_extensions() -> bool:
         print("⚠ Some CUDA extensions failed to install.")
         print("  You may need to install them manually.")
     print(f"{'='*60}")
-    
+
     return all_success
 
 

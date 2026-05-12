@@ -113,19 +113,19 @@ def download_native_trellis_model():
         logger.info("Skipping native TRELLIS download (USE_NATIVE_TRELLIS = False)")
         return True
     
-    # Add trellis submodule to path
-    trellis_path = Path(__file__).parent / "trellis"
-    if str(trellis_path) not in sys.path:
-        sys.path.insert(0, str(trellis_path))
-    
+    # Need to add TRELLIS.2 to sys.path so trellis2 module is importable
+    trellis2_path = str(Path(__file__).parent / "TRELLIS.2")
+    if trellis2_path not in sys.path:
+        sys.path.insert(0, trellis2_path)
+
     logger.info(f"Downloading native TRELLIS model: {config.NATIVE_TRELLIS_MODEL}...")
     try:
-        # Import TRELLIS pipeline
-        from trellis.pipelines import TrellisImageTo3DPipeline
-        
+        # Import TRELLIS 2 pipeline
+        from trellis2.pipelines import Trellis2ImageTo3DPipeline
+
         # Download by loading the pipeline (will cache to HuggingFace cache)
         logger.info("  Downloading TRELLIS pipeline (this may take a while)...")
-        pipeline_trellis = TrellisImageTo3DPipeline.from_pretrained(config.NATIVE_TRELLIS_MODEL)
+        pipeline_trellis = Trellis2ImageTo3DPipeline.from_pretrained(config.NATIVE_TRELLIS_MODEL)
         del pipeline_trellis
         gc.collect()
         torch.cuda.empty_cache()

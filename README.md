@@ -2,7 +2,7 @@
 
 ## Description
 
-The 3D Object Generation Blueprint is an end-to-end generative AI workflow that allows users to prototype 3D scenes quickly by simply describing the scene. The Blueprint takes a user's 3D scene idea, generates object recommendations, associated prompts and previews using a Llama 3.1 8B LLM and NVIDIA SANA, and ready-to-use 3D objects with Microsoft TRELLIS.  
+The 3D Object Generation Blueprint is an end-to-end generative AI workflow that allows users to prototype 3D scenes quickly by simply describing the scene. The Blueprint takes a user's 3D scene idea, generates object recommendations, associated prompts and previews using a Llama 3.1 8B LLM and NVIDIA SANA, and ready-to-use 3D objects with Microsoft TRELLIS 2.  
 
 > This blueprint supports the following NVIDIA GPUs: RTX 5090, RTX 5080, RTX 4090, RTX 4080, RTX 6000 Ada. We're planning to add wider GPU support in the near future. We recommend at least 48 GB of system RAM. 
 
@@ -27,7 +27,7 @@ Before you begin, ensure you have:
 - **~50GB disk space** for AI models
 - **HuggingFace Account** (free) - Required for downloading some models. Create an account at [huggingface.co](https://huggingface.co/join) and generate an access token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 
-> **Note:** gsplat is installed from a prebuilt wheel with CUDA kernels precompiled for Ampere (sm_86), Ada (sm_89), and Blackwell (sm_120). No JIT compilation or build tools are required.
+> **Note:** TRELLIS 2 CUDA extensions (nvdiffrast, nvdiffrec, CuMesh, FlexGEMM, o-voxel) are built from source during installation. Ensure CUDA 12.8 and Visual Studio Build Tools are installed before running the installer.
 
 ---
 
@@ -117,7 +117,7 @@ NATIVE_LLM_PRECISION = "bfloat16"
 The application automatically manages GPU memory across three models:
 - **LLM** (Qwen3-4B or Llama 3.1 8B)
 - **SANA** (Image generation)
-- **TRELLIS** (3D generation)
+- **TRELLIS 2** (3D generation — 4B parameters, O-Voxel architecture, PBR materials)
 
 **Memory Management Strategy:**
 - All models are pre-loaded at startup
@@ -229,7 +229,7 @@ Once the application is running, you can:
 
    - Convert all images to 3D Objects (Delete unwanted images before converting to 3D)
      
-   - **NOTE**: Image to 3D Object processing takes up to 45 seconds *per object* on a RTX 5090, when using the Convert All image option this time will be a multiple of the number of objects being converted, using the Convert All option may take a significant amount of time. The UI will not be updated until all objects have been converted. 
+   - **NOTE**: Image to 3D Object processing takes 3–60 seconds *per object* on a RTX 5090 (TRELLIS 2 at 1024³ resolution), when using the Convert All image option this time will be a multiple of the number of objects being converted, using the Convert All option may take a significant amount of time. The UI will not be updated until all objects have been converted. 
 
 3. **Save Objects**:
    - The Export Objects to File allows saving the generated objects to a folder.
@@ -302,11 +302,10 @@ VERBOSE = False                        # Detailed timing/memory logs
    - Set HuggingFace token: `set HF_TOKEN=your_token`
    - Check internet connection
 
-5. **TRELLIS import errors**
-   - Ensure submodules are initialized:
-     ```bash
-     git submodule update --init --recursive
-     ```
+5. **TRELLIS 2 import errors**
+   - Ensure the `TRELLIS.2` directory is present at the root of the project (cloned from `https://github.com/microsoft/TRELLIS.2`)
+   - Ensure TRELLIS 2 dependencies are installed: `python install_dependencies.py`
+   - Verify the `trellis2` module is importable: `python -c "from trellis2.pipelines import Trellis2ImageTo3DPipeline"`
 
 6. **Installation Issues**:
    - Run PowerShell as Administrator
@@ -320,7 +319,7 @@ VERBOSE = False                        # Detailed timing/memory logs
 
 ## Acknowledgments
 
-- [TRELLIS](https://github.com/microsoft/TRELLIS) - Microsoft's 3D generation model
+- [TRELLIS 2](https://github.com/microsoft/TRELLIS.2) - Microsoft's 3D generation model (4B params, O-Voxel, PBR materials)
 - [Qwen3](https://github.com/QwenLM/Qwen3) - Alibaba's LLM
 - [SANA](https://github.com/NVlabs/Sana) - NVIDIA's image generation model
 - [Gradio](https://github.com/gradio-app/gradio) - Web interface framework
