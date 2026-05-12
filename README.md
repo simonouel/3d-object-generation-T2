@@ -36,7 +36,7 @@ Two platforms are supported: **Windows 10/11** and **Linux EL9.4+** (Rocky Linux
 Clone the repository with submodules, then run the installer as root:
 
 ```bash
-git clone --recurse-submodules https://github.com/NVIDIA-AI-Blueprints/3d-object-generation.git
+git clone --recurse-submodules https://github.com/simonouel/3d-object-generation-T2.git
 cd 3d-object-generation
 
 sudo HF_TOKEN=hf_xxx bash install.sh
@@ -92,7 +92,7 @@ Before you begin, ensure you have:
 **Step 1:** Clone the repository with submodules:
 
 ```bash
-git clone --recurse-submodules https://github.com/NVIDIA-AI-Blueprints/3d-object-generation.git
+git clone --recurse-submodules https://github.com/simonouel/3d-object-generation-T2.git
 ```
 
 **Step 2:** Set the required environment variables:
