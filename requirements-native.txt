@@ -1,0 +1,4 @@
+# Native LLM dependencies
+# Core packages (transformers==4.57.3, accelerate==1.12.0) are in requirements.txt
+# Optional quantization support for GPTQ/INT4 models
+bitsandbytes>=0.43.0

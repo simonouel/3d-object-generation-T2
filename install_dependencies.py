@@ -118,29 +118,46 @@ def parse_config(config_path: Path) -> dict:
 
 
 def setup_cuda_env() -> bool:
-    """Set up CUDA environment variables if not already set.
-    
-    This blueprint requires CUDA 12.8 on Windows.
-    """
+    """Set up CUDA environment variables for Windows and Linux."""
     if os.environ.get("CUDA_HOME"):
         print(f"  CUDA_HOME already set: {os.environ['CUDA_HOME']}")
         return True
-    
-    # This blueprint requires CUDA 12.8 (Windows only)
-    cuda_path = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"
-    
-    if Path(cuda_path).exists():
-        os.environ["CUDA_HOME"] = cuda_path
-        os.environ["CUDA_PATH"] = cuda_path  # Some tools use CUDA_PATH
-        print(f"  Auto-detected CUDA 12.8: {cuda_path}")
-        return True
-    
-    print("  WARNING: CUDA 12.8 not found!")
-    print("  This blueprint requires CUDA 12.8. Please either:")
-    print("    1. Install CUDA 12.8 from https://developer.nvidia.com/cuda-downloads")
-    print("    2. Set CUDA_HOME manually if installed elsewhere:")
-    print('       set CUDA_HOME=C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.8')
-    return False
+
+    if os.name == "nt":
+        # Windows: check CUDA 12.8 default path
+        cuda_path = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"
+        if Path(cuda_path).exists():
+            os.environ["CUDA_HOME"] = cuda_path
+            os.environ["CUDA_PATH"] = cuda_path
+            print(f"  Auto-detected CUDA 12.8 (Windows): {cuda_path}")
+            return True
+        print("  WARNING: CUDA 12.8 not found!")
+        print("  Set CUDA_HOME manually: set CUDA_HOME=C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.8")
+        return False
+    else:
+        # Linux: check standard CUDA paths in order of preference
+        cuda_candidates = [
+            "/usr/local/cuda-12.8",
+            "/usr/local/cuda",
+            "/usr/cuda",
+        ]
+        for cuda_path in cuda_candidates:
+            if Path(cuda_path).exists() and Path(f"{cuda_path}/bin/nvcc").exists():
+                os.environ["CUDA_HOME"] = cuda_path
+                os.environ["CUDA_PATH"] = cuda_path
+                print(f"  Auto-detected CUDA: {cuda_path}")
+                return True
+        # nvcc may be on PATH even without CUDA_HOME
+        import shutil
+        if shutil.which("nvcc"):
+            nvcc_path = shutil.which("nvcc")
+            cuda_path = str(Path(nvcc_path).parent.parent)
+            os.environ["CUDA_HOME"] = cuda_path
+            print(f"  Detected CUDA via nvcc: {cuda_path}")
+            return True
+        print("  WARNING: CUDA not found! Install CUDA 12.8 and set CUDA_HOME.")
+        print("  Example: export CUDA_HOME=/usr/local/cuda")
+        return False
 
 
 def install_cuda_extension_from_git(name: str, git_url: str, branch: str = None, recursive: bool = False) -> bool:

@@ -270,6 +270,9 @@ datasets/
 
 # Exceptions for specific files that should be tracked
 !requirements.txt
+!requirements-torch.txt
+!requirements-native.txt
+!requirements-trellis.txt
 !README.md
 !LICENSE
 !SECURITY.md
