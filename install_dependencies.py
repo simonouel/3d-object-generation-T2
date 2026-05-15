@@ -284,7 +284,7 @@ def install_trellis_extensions() -> bool:
     else:
         print(f"\n  Installing o-voxel from {ovoxel_path}...")
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--no-build-isolation", str(ovoxel_path)],
+            [sys.executable, "-m", "pip", "install", "--no-build-isolation", "--no-deps", str(ovoxel_path)],
             capture_output=False
         )
         if result.returncode == 0:
