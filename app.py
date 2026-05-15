@@ -137,6 +137,60 @@ class TerminationServer:
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=2)
 
+class StatusServer:
+    """Lightweight HTTP server on port 7861 — serves /api/status JSON for Blender add-on."""
+
+    def __init__(self, host='0.0.0.0', port=7861):
+        self.host = host
+        self.port = port
+        self._server = None
+        self.running = False
+
+    def start(self):
+        import http.server
+        import json as _json
+
+        class _Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, fmt, *args):
+                pass  # silence request logs
+
+            def do_GET(self):
+                if self.path == '/api/status':
+                    try:
+                        st = gpu_manager.get_status()
+                    except Exception:
+                        st = {}
+                    body = _json.dumps({
+                        "llm":     "READY" if st.get("llm_loaded") else "NOT READY",
+                        "trellis": "READY" if st.get("trellis_loaded") else "NOT READY",
+                        "gradio":  "READY",
+                        "assets_dir": str(config.ASSETS_DIR),
+                    }).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+        def _serve():
+            self._server = http.server.HTTPServer((self.host, self.port), _Handler)
+            self._server.timeout = 1
+            self.running = True
+            logger.info(f"Status API server started on {self.host}:{self.port}")
+            while self.running:
+                self._server.handle_request()
+
+        threading.Thread(target=_serve, daemon=True).start()
+
+    def stop(self):
+        self.running = False
+        if self._server:
+            self._server.server_close()
+
+
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully."""
     global _shutdown_requested, _termination_server_thread
@@ -372,6 +426,13 @@ def create_app():
         print("Termination server started on localhost:12345")
     except Exception as e:
         print(f"Failed to start termination server: {e}")
+
+    # Start the status API server (for remote Blender add-on polling)
+    status_server = StatusServer()
+    try:
+        status_server.start()
+    except Exception as e:
+        print(f"Failed to start status server: {e}")
         print("   External termination requests will not be available")
         _termination_server_thread = None
 

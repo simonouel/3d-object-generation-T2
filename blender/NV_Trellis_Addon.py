@@ -316,12 +316,33 @@ def check_gradio_service():
         logger.debug(f"Failed to check Gradio: {str(e)}")
         return "NOT READY"
 
+def get_services_status_remote():
+    """Query /api/status on the server (port 7861) — used in remote mode."""
+    try:
+        base = get_server_url()
+        # Replace Gradio port (7860) with status API port (7861)
+        import re
+        status_url = re.sub(r':\d+$', ':7861', base) + '/api/status'
+        req = urllib.request.Request(status_url)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            import json as _json
+            data = _json.loads(resp.read().decode())
+            return data.get("llm", "NOT READY"), data.get("trellis", "NOT READY")
+    except Exception as e:
+        logger.debug(f"Remote status check failed: {e}")
+        return "NOT READY", "NOT READY"
+
+
 def check_services_status():
     """Thread function to periodically check all services."""
     global llm_status, trellis_status, gradio_status
     python_path = get_conda_python_path()
     while not stop_thread:
-        llm, trellis = get_services_status(python_path)
+        # Use remote HTTP status API if no local Python found
+        if python_path is None:
+            llm, trellis = get_services_status_remote()
+        else:
+            llm, trellis = get_services_status(python_path)
         gradio = check_gradio_service()
         with llm_status_lock:
             llm_status = llm
@@ -360,6 +381,13 @@ class TrellisAddonPreferences(AddonPreferences):
         default="http://127.0.0.1:7860"
     )
 
+    assets_path: StringProperty(
+        name="Assets Path (local mount)",
+        description="Local path to the server's assets directory (NFS/CIFS mount of TRELLIS_ASSETS_DIR). Used by the Asset Importer to find exported GLB files. Leave blank to use Blueprint Base Path.",
+        default="",
+        subtype='DIR_PATH'
+    )
+
     python_path: StringProperty(
         name="Python Path (optional)",
         subtype='FILE_PATH',
@@ -381,6 +409,7 @@ class TrellisAddonPreferences(AddonPreferences):
         layout = self.layout
         layout.prop(self, "base_path")
         layout.prop(self, "server_url")
+        layout.prop(self, "assets_path")
         layout.prop(self, "python_path")
         layout.prop(self, "console_log_level")
 
