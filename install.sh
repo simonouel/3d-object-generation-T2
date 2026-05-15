@@ -153,37 +153,9 @@ log "Python dependencies installed"
 
 # --- Apply LLM backend config ------------------------------------------------
 if [[ "$USE_OPENAI_LLM" -eq 1 ]]; then
-    info "Configuring OpenAI-compatible LLM backend in config.py..."
-    "$PYTHON" - <<PYEOF
-import re, sys
-
-config_path = "$REPO_DIR/config.py"
-with open(config_path, 'r') as f:
-    content = f.read()
-
-content = re.sub(
-    r'USE_OPENAI_COMPATIBLE_LLM\s*=\s*\S+',
-    'USE_OPENAI_COMPATIBLE_LLM = True',
-    content
-)
-content = re.sub(
-    r'OPENAI_COMPATIBLE_BASE_URL\s*=\s*"[^"]*"',
-    'OPENAI_COMPATIBLE_BASE_URL = "$OPENAI_URL"',
-    content
-)
-content = re.sub(
-    r'OPENAI_COMPATIBLE_MODEL\s*=\s*"[^"]*"',
-    'OPENAI_COMPATIBLE_MODEL = "$OPENAI_MODEL"',
-    content
-)
-
-with open(config_path, 'w') as f:
-    f.write(content)
-print("  config.py updated: USE_OPENAI_COMPATIBLE_LLM = True")
-print("  OPENAI_COMPATIBLE_BASE_URL = '$OPENAI_URL'")
-print("  OPENAI_COMPATIBLE_MODEL = '$OPENAI_MODEL'")
-PYEOF
-    log "LLM backend configured"
+    info "OpenAI-compatible LLM backend: will be injected via systemd environment variables"
+    info "  OPENAI_COMPATIBLE_BASE_URL=$OPENAI_URL"
+    info "  OPENAI_COMPATIBLE_MODEL=$OPENAI_MODEL (auto-detected at startup if 'default')"
 fi
 
 # --- TRELLIS 2 CUDA extensions -----------------------------------------------
@@ -231,6 +203,7 @@ Environment="OPENCV_IO_ENABLE_OPENEXR=1"
 Environment="PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
 Environment="HF_TOKEN=${HF_TOKEN:-}"
 Environment="OPENAI_COMPATIBLE_BASE_URL=${OPENAI_URL:-}"
+Environment="OPENAI_COMPATIBLE_MODEL=${OPENAI_MODEL:-default}"
 Environment="TRELLIS_ASSETS_DIR=${TRELLIS_ASSETS_DIR:-}"
 ExecStart=$VENV_DIR/bin/python $REPO_DIR/app.py
 Restart=on-failure
@@ -268,4 +241,6 @@ echo "  To set HuggingFace token or network assets dir after install:"
 echo "    sudo systemctl edit $SERVICE_NAME"
 echo "    # Add: Environment=\"HF_TOKEN=hf_xxx\""
 echo "    # Add: Environment=\"TRELLIS_ASSETS_DIR=/mnt/nfs/3d-assets\""
+echo "    # Add: Environment=\"OPENAI_COMPATIBLE_BASE_URL=http://vllm-host:8000/v1\""
+echo "    # Add: Environment=\"OPENAI_COMPATIBLE_MODEL=default\"  # auto-detected"
 echo ""

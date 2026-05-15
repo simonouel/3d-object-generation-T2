@@ -354,8 +354,10 @@ NATIVE_LLM_PRECISION = "bfloat16"      # float16, bfloat16, or int4 (for GPTQ)
 # =============================================================================
 # OpenAI-compatible API Settings (when USE_OPENAI_COMPATIBLE_LLM = True)
 # =============================================================================
-OPENAI_COMPATIBLE_BASE_URL = "http://lx-gpu-001.vfx.priv:8000/v1"  # vLLM endpoint
-OPENAI_COMPATIBLE_MODEL = "default"    # "default" = auto-detect from /v1/models at startup
+# All three values can be set via environment variables — no need to edit config.py.
+# Setting OPENAI_COMPATIBLE_BASE_URL automatically enables OpenAI mode.
+OPENAI_COMPATIBLE_BASE_URL = "http://lx-gpu-001.vfx.priv:8000/v1"  # env: OPENAI_COMPATIBLE_BASE_URL
+OPENAI_COMPATIBLE_MODEL = "default"    # env: OPENAI_COMPATIBLE_MODEL — "default" = auto-detect
 
 # =============================================================================
 # Output Directory (network share support)
@@ -364,8 +366,14 @@ OPENAI_COMPATIBLE_MODEL = "default"    # "default" = auto-detect from /v1/models
 # Set to a NFS/CIFS mount accessible by all Blender workstations so exported
 # GLB files land directly on the share without manual copy.
 #
+# All directory/endpoint settings can be overridden with environment variables:
+#   TRELLIS_ASSETS_DIR        — output directory (NFS/CIFS share)
+#   OPENAI_COMPATIBLE_BASE_URL — vLLM/Ollama endpoint (non-empty enables OpenAI mode)
+#   OPENAI_COMPATIBLE_MODEL   — model name ("default" = auto-detected from /v1/models)
+#
 # Example (in systemd unit or shell):
 #   export TRELLIS_ASSETS_DIR=/mnt/nfs/3d-assets
+#   export OPENAI_COMPATIBLE_BASE_URL=http://vllm-host:8000/v1
 #
 # The server writes GLBs there; workstations mount the same share and point
 # the Asset Importer to their local mount path.
