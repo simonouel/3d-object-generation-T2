@@ -199,13 +199,21 @@ class Model3DService:
             
             load_start = time.time()
             
+            # Redirect briaai/RMBG-2.0 (non-commercial, gated) → ZhengPeng7/BiRefNet (MIT)
+            # before from_pretrained() reads pipeline.json and tries to download RMBG-2.0
+            _orig_birefnet_init = BiRefNet.__init__
+            def _patched_birefnet_init(self_br, model_name="ZhengPeng7/BiRefNet"):
+                if model_name == "briaai/RMBG-2.0":
+                    logger.info("Redirecting rembg model: briaai/RMBG-2.0 → ZhengPeng7/BiRefNet (MIT)")
+                    model_name = "ZhengPeng7/BiRefNet"
+                _orig_birefnet_init(self_br, model_name)
+            BiRefNet.__init__ = _patched_birefnet_init
+
             # Load pipeline from HuggingFace
             logger.info(f"Loading TRELLIS 2 model: {self.model_name}")
             self.pipeline = Trellis2ImageTo3DPipeline.from_pretrained(self.model_name)
 
-            # Replace briaai/RMBG-2.0 (non-commercial) with ZhengPeng7/BiRefNet (MIT)
-            logger.info("Swapping rembg backend to ZhengPeng7/BiRefNet (MIT license)")
-            self.pipeline.rembg_model = BiRefNet("ZhengPeng7/BiRefNet")
+            BiRefNet.__init__ = _orig_birefnet_init  # restore
 
             self.pipeline.cuda()
             
