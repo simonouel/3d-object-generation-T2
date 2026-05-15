@@ -259,7 +259,7 @@ def install_trellis_extensions() -> bool:
     # nvdiffrec (renderutils branch)
     if not install_cuda_extension_from_git(
         "nvdiffrec", "https://github.com/JeffreyXiang/nvdiffrec.git",
-        import_name="renderutils", branch="renderutils",
+        import_name="nvdiffrec_render", branch="renderutils",
     ):
         all_success = False
 
@@ -273,7 +273,7 @@ def install_trellis_extensions() -> bool:
     # FlexGEMM
     if not install_cuda_extension_from_git(
         "FlexGEMM", "https://github.com/JeffreyXiang/FlexGEMM.git",
-        import_name="flexgemm", recursive=True,
+        import_name="FlexGEMM", recursive=True,
     ):
         all_success = False
 
