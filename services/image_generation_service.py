@@ -22,7 +22,7 @@ import logging
 import datetime
 import torch
 import gc
-from diffusers import StableDiffusionXLPipeline, EulerDiscreteScheduler
+from diffusers import FluxPipeline, FluxTransformer2DModel, AutoencoderKL
 import time
 import config
 from services.guardrail_service import GuardrailService
@@ -135,17 +135,26 @@ class ImageGenerationService:
             self._clear_gpu_memory() 
             print(f"Timestamp after clear_gpu_memory: {time.time()}")
             
-            logger.info(f"Loading image generation model from {self.model_path}...")
+            logger.info(f"Loading FLUX pipeline — transformer: {config.IMAGE_FLUX_TRANSFORMER}")
 
             initial_time = time.time()
-            self.sana_pipeline = StableDiffusionXLPipeline.from_single_file(
-                self.model_path,
-                torch_dtype=torch.float16,
+            # Load pipeline with text encoders from HF (CLIP-L + T5-XXL, cached after first run)
+            # transformer=None / vae=None skips downloading those heavy components from HF
+            self.sana_pipeline = FluxPipeline.from_pretrained(
+                config.IMAGE_FLUX_MODEL,
+                transformer=None,
+                vae=None,
+                torch_dtype=torch.bfloat16,
             )
-            # Lightning models need trailing timesteps for correct quality at low step counts
-            self.sana_pipeline.scheduler = EulerDiscreteScheduler.from_config(
-                self.sana_pipeline.scheduler.config,
-                timestep_spacing="trailing",
+            # Load transformer from local fp8 file
+            self.sana_pipeline.transformer = FluxTransformer2DModel.from_single_file(
+                config.IMAGE_FLUX_TRANSFORMER,
+                torch_dtype=torch.bfloat16,
+            )
+            # Load VAE from local file
+            self.sana_pipeline.vae = AutoencoderKL.from_single_file(
+                config.IMAGE_FLUX_VAE,
+                torch_dtype=torch.bfloat16,
             )
             print(f"Timestamp after load_image_model: {time.time()}")
             print(f"Time taken to load image model: {time.time() - initial_time} seconds")
@@ -229,8 +238,9 @@ class ImageGenerationService:
                     prompt=prompt,
                     num_inference_steps=config.IMAGE_INFERENCE_STEPS,
                     guidance_scale=config.IMAGE_GUIDANCE_SCALE,
-                    width=1024,
+                    max_sequence_length=256,
                     height=1024,
+                    width=1024,
                     generator=generator,
                 )
                 # Extract the image (PIL format)

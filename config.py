@@ -196,14 +196,18 @@ VRAM_THRESHOLD_DISABLE_IMAGE_GEN_DURING_3D_GENERATION = 16  # Disable image gen 
 VRAM_THRESHOLD_LLM = 31  # if GPU has > VRAM_THRESHOLD_LLM, LLM Agent will not be stopped
 
 # -----------------------------------------------------------------------------
-# Image Generation Model (local safetensors — SDXL Lightning)
+# Image Generation Model (FLUX.1-schnell — local transformer + VAE, text encoders from HF)
 # -----------------------------------------------------------------------------
-IMAGE_MODEL_PATH = os.environ.get(
-    "IMAGE_MODEL_PATH",
-    "/mnt/data-003/ai/models/checkpoints/SDXL/realvisxlV50_v50LightningBakedvae.safetensors",
+IMAGE_FLUX_MODEL       = os.environ.get("IMAGE_FLUX_MODEL", "black-forest-labs/FLUX.1-schnell")
+IMAGE_FLUX_TRANSFORMER = os.environ.get(
+    "IMAGE_FLUX_TRANSFORMER",
+    "/mnt/data-003/ai/models/checkpoints/Flux/flux1-schnell-fp8.safetensors",
 )
-IMAGE_INFERENCE_STEPS = int(os.environ.get("IMAGE_INFERENCE_STEPS", "8"))
-IMAGE_GUIDANCE_SCALE = float(os.environ.get("IMAGE_GUIDANCE_SCALE", "2.0"))
+IMAGE_FLUX_VAE         = os.environ.get("IMAGE_FLUX_VAE", "/mnt/data-003/ai/models/vae/ae.safetensors")
+IMAGE_INFERENCE_STEPS  = int(os.environ.get("IMAGE_INFERENCE_STEPS", "4"))   # schnell = 4 steps
+IMAGE_GUIDANCE_SCALE   = float(os.environ.get("IMAGE_GUIDANCE_SCALE", "0.0")) # guidance-distilled
+# Keep for download_models.py reference check
+IMAGE_MODEL_PATH       = IMAGE_FLUX_TRANSFORMER
 
 # -----------------------------------------------------------------------------
 # Model Defaults
