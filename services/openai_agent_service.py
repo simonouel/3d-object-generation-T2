@@ -64,7 +64,10 @@ class OpenAIAgentService:
             temperature=temp,
             max_tokens=max_tokens,
         )
-        return resp.choices[0].message.content.strip()
+        msg = resp.choices[0].message
+        # Qwen3 thinking mode: content may be None, actual answer in reasoning_content
+        content = msg.content or getattr(msg, 'reasoning_content', None) or ""
+        return content.strip()
 
     def _planning_system_prompt(self) -> str:
         n = getattr(config, 'NUM_OF_OBJECTS', 20)
