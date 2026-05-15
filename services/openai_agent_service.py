@@ -85,7 +85,10 @@ class OpenAIAgentService:
         return (
             "You are now in 2D prompt generation mode. Your task is to create detailed prompts for each object in the scene.\n"
             "The descriptions should be highly detailed and visually rich, suitable for a text-to-image generation model.\n"
-            "The prompt must specify a plain or empty background (e.g., 'on a white background', 'isolated', 'no background').\n"
+            "IMPORTANT: Every prompt MUST include photorealistic style keywords such as 'photorealistic', 'product photography', "
+            "'studio lighting', 'physically based rendering', 'high detail', 'sharp focus'. "
+            "The goal is a clean 3D-render-style reference image, NOT an illustration or cartoon.\n"
+            "The prompt must specify a plain white background: 'isolated on a white background'.\n"
             "Focus ONLY on the physical and visual characteristics of each object itself.\n"
             f"Keep each object's prompt to exactly {length} words or less for optimal generation quality.\n"
             "Format each object's prompt with 'Object:' and 'Prompt:' labels.\n"
@@ -93,8 +96,8 @@ class OpenAIAgentService:
             "Do not use asterisks or any special formatting characters.\n"
             "Output only the Object and Prompt labels with clean text - no additional formatting or notes.\n\n"
             "The prompt text should describe the object's visual characteristics in detail.\n"
-            "Example:\nObject: Beach Chair\nPrompt: A comfortable beach chair with ergonomic design and colorful fabric, on a white background\n"
-            "Example:\nObject: Beach Umbrella\nPrompt: A vibrant beach umbrella with colorful stripes and sturdy metal frame, on a white background"
+            "Example:\nObject: Beach Chair\nPrompt: Photorealistic beach chair with ergonomic wooden frame and striped canvas, product photography, studio lighting, isolated on a white background\n"
+            "Example:\nObject: Fire Hydrant\nPrompt: Photorealistic red cast iron fire hydrant with chrome valves and bolts, physically based rendering, sharp focus, isolated on a white background"
         )
 
     @staticmethod

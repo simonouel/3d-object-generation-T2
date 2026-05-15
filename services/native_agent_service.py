@@ -154,7 +154,10 @@ Focus only on suggesting appropriate objects for the scene based on the user's r
         """Get rules for 2D prompt generation phase."""
         return f"""You are now in 2D prompt generation mode. Your task is to create detailed prompts for each object in the scene.
 The descriptions should be highly detailed and visually rich, suitable for a text-to-image generation model.
-The prompt must specify a plain or empty background (e.g., 'on a white background', 'isolated', 'no background').
+IMPORTANT: Every prompt MUST include photorealistic style keywords such as 'photorealistic', 'product photography', \
+'studio lighting', 'physically based rendering', 'high detail', 'sharp focus'. \
+The goal is a clean 3D-render-style reference image, NOT an illustration or cartoon.
+The prompt must specify a plain white background: 'isolated on a white background'.
 Focus ONLY on the physical and visual characteristics of each object itself.
 Keep each object's prompt to exactly {config.TWO_D_PROMPT_LENGTH} words or less for optimal generation quality.
 Generate a separate prompt for each object in the scene.
@@ -166,10 +169,10 @@ Output only the Object and Prompt labels with clean text - no additional formatt
 The prompt text should describe the object's visual characteristics in detail.
 Example:
 Object: Beach Chair
-Prompt: A comfortable beach chair with ergonomic design and colorful fabric, on a white background
+Prompt: Photorealistic beach chair with ergonomic wooden frame and striped canvas, product photography, studio lighting, isolated on a white background
 Example:
-Object: Beach Umbrella
-Prompt: A vibrant beach umbrella with colorful stripes and sturdy metal frame, on a white background"""
+Object: Fire Hydrant
+Prompt: Photorealistic red cast iron fire hydrant with chrome valves and bolts, physically based rendering, sharp focus, isolated on a white background"""
     
     def _load_model(self):
         """Load the native PyTorch LLM model (supports full precision and GPTQ INT4 quantized models)."""
