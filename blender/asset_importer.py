@@ -59,9 +59,9 @@ from bpy.props import StringProperty, BoolProperty, FloatProperty
 # Add-on metadata
 bl_info = {
     "name": "Asset Importer",
-    "author": "Your Name",
-    "version": (1, 1),  # Updated version
-    "blender": (3, 0, 0),
+    "author": "NVIDIA",
+    "version": (1, 2),
+    "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Asset Importer",
     "description": "Imports 3D models from a directory, offsets them, optionally scales them, and adds meshes to the Asset Browser",
     "category": "Import-Export",

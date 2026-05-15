@@ -18,7 +18,7 @@
 bl_info = {
     "name": "3D Object Generation",
     "author": "NVIDIA",
-    "version": (1, 0),
+    "version": (1, 1),
     "blender": (4, 2, 0),
     "category": "3D View",
     "description": "Manages the services for 3D asset generation within Blender",
@@ -111,10 +111,29 @@ def setup_logging():
     update_logging_level()
 
 def get_conda_python_path():
-    """Attempt to find the Conda environment's Python executable."""
+    """Find the Python executable: venv (.venv/) or Conda environment."""
     addon_prefs = bpy.context.preferences.addons[__name__].preferences
     user_python_path = addon_prefs.python_path.strip()
     env_name = get_conda_env_name()
+
+    # Step 0: .venv relative to base_path (Linux install via install.sh)
+    base_path = addon_prefs.base_path.strip()
+    if base_path:
+        for venv_python in [
+            os.path.join(base_path, ".venv", "bin", "python"),       # Linux
+            os.path.join(base_path, ".venv", "Scripts", "python.exe"),  # Windows
+        ]:
+            if os.path.isfile(venv_python):
+                try:
+                    result = subprocess.run(
+                        [venv_python, "-c", "import sys; print(sys.version)"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if result.returncode == 0:
+                        logger.info("Using venv Python: %s", venv_python)
+                        return venv_python
+                except Exception as e:
+                    logger.debug("Failed to verify venv Python: %s", str(e))
 
     # Step 1: Check CONDA_PREFIX
     conda_prefix = os.environ.get("CONDA_PREFIX")
@@ -511,8 +530,10 @@ class TRELLIS_OT_ManageTrellis(Operator):
         if overall_status == "READY":
             # Stop services
             try:
-                subprocess.run(["stop_services.bat"], shell=True, check=True, cwd=base_path)
-                logger.info("Services stopped via stop_services.bat")
+                if platform.system() == "Windows":
+                    subprocess.run(["stop_services.bat"], shell=True, check=True, cwd=base_path)
+                    logger.info("Services stopped via stop_services.bat")
+                TrellisManager().stop_services()
                 # Wait briefly for services to become NOT READY
                 start_time = time.time()
                 timeout = 30
@@ -521,7 +542,6 @@ class TRELLIS_OT_ManageTrellis(Operator):
                         if llm_status == "NOT READY" and trellis_status == "NOT READY" and gradio_status == "NOT READY":
                             break
                     time.sleep(1)
-                TrellisManager().stop_services()
                 self.report({'INFO'}, "All services terminated successfully")
                 with trellis_status_lock:
                     trellis_status = "NOT READY"
@@ -530,7 +550,7 @@ class TRELLIS_OT_ManageTrellis(Operator):
                 with gradio_status_lock:
                     gradio_status = "NOT READY"
             except Exception as e:
-                logger.error(f"Failed to stop services via stop_services.bat: {str(e)}")
+                logger.error(f"Failed to stop services: {str(e)}")
                 self.report({'ERROR'}, "Failed to stop services")
                 return {'CANCELLED'}
         else:
@@ -549,8 +569,12 @@ class TRELLIS_OT_ManageTrellis(Operator):
             else:
                 # Stop any existing partial services
                 try:
-                    subprocess.run(["stop_services.bat"], shell=True, check=True, cwd=base_path)
-                    logger.info("Existing partial services stopped via stop_services.bat")
+                    if platform.system() == "Windows":
+                        subprocess.run(["stop_services.bat"], shell=True, check=True, cwd=base_path)
+                        logger.info("Existing partial services stopped via stop_services.bat")
+                    else:
+                        TrellisManager().stop_services()
+                        logger.info("Existing partial services stopped")
                 except Exception as e:
                     logger.warning(f"Failed to stop existing services: {str(e)}")
                     self.report({'WARNING'}, "Failed to stop existing services, continuing with startup")
@@ -652,7 +676,7 @@ classes = (
 )
 
 def register():
-    print("3D Object Generation Manager Add-on Loaded - Version 1.0 - June 16, 2025")
+    print("3D Object Generation Manager Add-on Loaded - Version 1.1")
     if bpy.app.version < (4, 2, 0):
         print("Warning: This add-on requires Blender 4.2.0 or higher")
         return
@@ -683,13 +707,14 @@ def register():
 def unregister():
     global log_output_stop
     log_output_stop.set()
-    
+
     base_path = bpy.context.preferences.addons[__name__].preferences.base_path
-    try:
-        subprocess.run(["stop_services.bat"], shell=True, check=True, cwd=base_path)
-        logger.info("Services stopped successfully during unregister")
-    except Exception as e:
-        logger.warning(f"Failed to stop services during unregister: {str(e)}")
+    if platform.system() == "Windows":
+        try:
+            subprocess.run(["stop_services.bat"], shell=True, check=True, cwd=base_path)
+            logger.info("Services stopped successfully during unregister")
+        except Exception as e:
+            logger.warning(f"Failed to stop services during unregister: {str(e)}")
 
     TrellisManager().stop_services()
 
