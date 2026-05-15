@@ -19,10 +19,12 @@
 Download all required models for the 3D Object Generation application.
 
 This script downloads:
-- Sana Sprint model (image generation)
 - NSFW Prompt Detector (guardrail)
 - Native LLM model (if USE_NATIVE_LLM = True)
 - Native TRELLIS model (if USE_NATIVE_TRELLIS = True)
+
+Note: Image generation uses a local safetensors file (RealVisXL Lightning) —
+no download needed. See config.IMAGE_MODEL_PATH.
 """
 
 import torch
@@ -31,7 +33,6 @@ import sys
 from pathlib import Path
 
 from huggingface_hub import scan_cache_dir
-from diffusers import SanaSprintPipeline
 from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 import logging
 
@@ -56,25 +57,14 @@ def is_model_cached(repo_id: str) -> bool:
 
 
 def download_sana_model():
-    """Download the Sana Sprint image generation model."""
-    repo_id = "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers"
-    if is_model_cached(repo_id):
-        logger.info(f"✓ Sana Sprint model already downloaded — skipping")
+    """Verify the local image generation model file exists (no download needed)."""
+    model_path = Path(config.IMAGE_MODEL_PATH)
+    if model_path.exists():
+        logger.info(f"✓ Image generation model found: {model_path}")
         return True
-    logger.info("Downloading Sana Sprint model...")
-    try:
-        sana_model = SanaSprintPipeline.from_pretrained(
-            repo_id,
-            torch_dtype=torch.bfloat16
-        )
-        del sana_model
-        gc.collect()
-        torch.cuda.empty_cache()
-        logger.info("✓ Sana Sprint model downloaded successfully!")
-        return True
-    except Exception as e:
-        logger.error(f"✗ Error downloading Sana Sprint model: {e}")
-        return False
+    logger.error(f"✗ Image generation model not found: {model_path}")
+    logger.error("  Set IMAGE_MODEL_PATH env var to a valid .safetensors file.")
+    return False
 
 
 def download_guardrail_model():

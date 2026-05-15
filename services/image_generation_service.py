@@ -15,14 +15,14 @@
 # limitations under the License.
 #
 
-"""Image generation service using SANA model."""
+"""Image generation service using RealVisXL Lightning (SDXL)."""
 
 import os
 import logging
 import datetime
 import torch
 import gc
-from diffusers import SanaSprintPipeline
+from diffusers import StableDiffusionXLPipeline, EulerDiscreteScheduler
 import time
 import config
 from services.guardrail_service import GuardrailService
@@ -38,7 +38,7 @@ class ImageGenerationService:
     def __init__(self):
         self.sana_pipeline = None
         self.is_loaded = False
-        self.model_path = "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers"
+        self.model_path = config.IMAGE_MODEL_PATH
         self.device = None
         self.guardrail_service = GuardrailService()
         
@@ -135,13 +135,17 @@ class ImageGenerationService:
             self._clear_gpu_memory() 
             print(f"Timestamp after clear_gpu_memory: {time.time()}")
             
-            logger.info("Loading SANA model...")
-            
+            logger.info(f"Loading image generation model from {self.model_path}...")
+
             initial_time = time.time()
-            # Load model with optimizations and directly to GPU
-            self.sana_pipeline = SanaSprintPipeline.from_pretrained(
+            self.sana_pipeline = StableDiffusionXLPipeline.from_single_file(
                 self.model_path,
-                torch_dtype=torch.bfloat16,
+                torch_dtype=torch.float16,
+            )
+            # Lightning models need trailing timesteps for correct quality at low step counts
+            self.sana_pipeline.scheduler = EulerDiscreteScheduler.from_config(
+                self.sana_pipeline.scheduler.config,
+                timestep_spacing="trailing",
             )
             print(f"Timestamp after load_sana_model: {time.time()}")
             print(f"Time taken to load SANA model: {time.time() - initial_time} seconds")
@@ -215,7 +219,7 @@ class ImageGenerationService:
             # Format object name: lowercase and replace spaces with underscores
             formatted_object_name = object_name.lower().replace(" ", "_")
             
-            # Generate image - SCM requires num_inference_steps=2
+            # Generate image
             with torch.no_grad():  # Reduce memory usage during inference
                 # Create generator on CUDA - will be cleaned up explicitly
                 generator = torch.Generator("cuda").manual_seed(seed)
@@ -223,8 +227,11 @@ class ImageGenerationService:
                 # Store full output to explicitly clean it up
                 output = self.sana_pipeline(
                     prompt=prompt,
-                    num_inference_steps=2,  # SCM requirement
-                    generator=generator
+                    num_inference_steps=config.IMAGE_INFERENCE_STEPS,
+                    guidance_scale=config.IMAGE_GUIDANCE_SCALE,
+                    width=1024,
+                    height=1024,
+                    generator=generator,
                 )
                 # Extract the image (PIL format)
                 image = output.images[0]

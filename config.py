@@ -196,6 +196,16 @@ VRAM_THRESHOLD_DISABLE_IMAGE_GEN_DURING_3D_GENERATION = 16  # Disable image gen 
 VRAM_THRESHOLD_LLM = 31  # if GPU has > VRAM_THRESHOLD_LLM, LLM Agent will not be stopped
 
 # -----------------------------------------------------------------------------
+# Image Generation Model (local safetensors — SDXL Lightning)
+# -----------------------------------------------------------------------------
+IMAGE_MODEL_PATH = os.environ.get(
+    "IMAGE_MODEL_PATH",
+    "/mnt/data-003/ai/models/checkpoints/SDXL/realvisxlV50_v50LightningBakedvae.safetensors",
+)
+IMAGE_INFERENCE_STEPS = int(os.environ.get("IMAGE_INFERENCE_STEPS", "8"))
+IMAGE_GUIDANCE_SCALE = float(os.environ.get("IMAGE_GUIDANCE_SCALE", "2.0"))
+
+# -----------------------------------------------------------------------------
 # Model Defaults
 # -----------------------------------------------------------------------------
 DEFAULT_SEED = 42
