@@ -436,9 +436,22 @@ def create_app():
         print("   External termination requests will not be available")
         _termination_server_thread = None
 
+    os_theme_js = """
+() => {
+    const apply = () => {
+        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    };
+    apply();
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', apply);
+}
+"""
     with gr.Blocks(
-        title="3D-Object-Generator", 
-        # css_paths=["static/css/custom.css"]
+        title="3D-Object-Generator",
+        js=os_theme_js,
     ) as app:
         
         
