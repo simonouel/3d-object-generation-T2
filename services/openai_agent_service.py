@@ -63,10 +63,9 @@ class OpenAIAgentService:
             ],
             temperature=temp,
             max_tokens=max_tokens,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
-        msg = resp.choices[0].message
-        # Qwen3 thinking mode: content may be None, actual answer in reasoning_content
-        content = msg.content or getattr(msg, 'reasoning_content', None) or ""
+        content = resp.choices[0].message.content or ""
         return content.strip()
 
     def _planning_system_prompt(self) -> str:
