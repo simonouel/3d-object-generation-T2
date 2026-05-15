@@ -19,12 +19,21 @@ Usage:
     python install_dependencies.py
 """
 
+import importlib.util
 import subprocess
 import sys
 import os
 import tempfile
 import shutil
 from pathlib import Path
+
+
+def is_package_installed(import_name: str) -> bool:
+    """Return True if the package is already importable in the current environment."""
+    try:
+        return importlib.util.find_spec(import_name) is not None
+    except (ModuleNotFoundError, ValueError):
+        return False
 
 
 def run_pip_install(requirements_file: str, description: str) -> bool:
@@ -160,18 +169,24 @@ def setup_cuda_env() -> bool:
         return False
 
 
-def install_cuda_extension_from_git(name: str, git_url: str, branch: str = None, recursive: bool = False) -> bool:
-    """Clone a git repo and install it.
+def install_cuda_extension_from_git(name: str, git_url: str, import_name: str = None,
+                                    branch: str = None, recursive: bool = False) -> bool:
+    """Clone a git repo and install it, skipping if already installed.
 
     Args:
         name: Display name of the extension
         git_url: The git repository URL
+        import_name: Python import name used to detect if already installed
         branch: Optional branch or tag to check out
         recursive: Whether to clone submodules recursively
 
     Returns:
-        True if installation succeeded, False otherwise
+        True if installation succeeded (or already installed), False otherwise
     """
+    if import_name and is_package_installed(import_name):
+        print(f"\n  Skipping {name} (already installed)")
+        return True
+
     print(f"\n  Installing {name}...")
     with tempfile.TemporaryDirectory() as tmpdir:
         clone_cmd = ["git", "clone"]
@@ -222,34 +237,49 @@ def install_trellis_extensions() -> bool:
     all_success = True
 
     # nvdiffrast v0.4.0
-    if not install_cuda_extension_from_git("nvdiffrast", "https://github.com/NVlabs/nvdiffrast.git", branch="v0.4.0"):
+    if not install_cuda_extension_from_git(
+        "nvdiffrast", "https://github.com/NVlabs/nvdiffrast.git",
+        import_name="nvdiffrast", branch="v0.4.0",
+    ):
         all_success = False
 
     # nvdiffrec (renderutils branch)
-    if not install_cuda_extension_from_git("nvdiffrec", "https://github.com/JeffreyXiang/nvdiffrec.git", branch="renderutils"):
+    if not install_cuda_extension_from_git(
+        "nvdiffrec", "https://github.com/JeffreyXiang/nvdiffrec.git",
+        import_name="renderutils", branch="renderutils",
+    ):
         all_success = False
 
     # CuMesh
-    if not install_cuda_extension_from_git("CuMesh", "https://github.com/JeffreyXiang/CuMesh.git", recursive=True):
+    if not install_cuda_extension_from_git(
+        "CuMesh", "https://github.com/JeffreyXiang/CuMesh.git",
+        import_name="cumesh", recursive=True,
+    ):
         all_success = False
 
     # FlexGEMM
-    if not install_cuda_extension_from_git("FlexGEMM", "https://github.com/JeffreyXiang/FlexGEMM.git", recursive=True):
+    if not install_cuda_extension_from_git(
+        "FlexGEMM", "https://github.com/JeffreyXiang/FlexGEMM.git",
+        import_name="flexgemm", recursive=True,
+    ):
         all_success = False
 
     # o-voxel (local package in TRELLIS.2 repo)
     script_dir = Path(__file__).parent
     ovoxel_path = script_dir / "TRELLIS.2" / "o-voxel"
-    print(f"\n  Installing o-voxel from {ovoxel_path}...")
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--no-build-isolation", str(ovoxel_path)],
-        capture_output=False
-    )
-    if result.returncode == 0:
-        print("  o-voxel installed successfully")
+    if is_package_installed("o_voxel"):
+        print("\n  Skipping o-voxel (already installed)")
     else:
-        print("  o-voxel installation failed")
-        all_success = False
+        print(f"\n  Installing o-voxel from {ovoxel_path}...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--no-build-isolation", str(ovoxel_path)],
+            capture_output=False
+        )
+        if result.returncode == 0:
+            print("  o-voxel installed successfully")
+        else:
+            print("  o-voxel installation failed")
+            all_success = False
 
     print(f"\n{'='*60}")
     if all_success:
