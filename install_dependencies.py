@@ -277,6 +277,21 @@ def install_trellis_extensions() -> bool:
     ):
         all_success = False
 
+    # flash-attn (required by TRELLIS 2 attention backend)
+    if is_package_installed("flash_attn"):
+        print("\n  Skipping flash-attn (already installed)")
+    else:
+        print("\n  Installing flash-attn (compiling CUDA kernels — may take 5-10 min)...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "flash-attn", "--no-build-isolation"],
+            capture_output=False
+        )
+        if result.returncode == 0:
+            print("  flash-attn installed successfully")
+        else:
+            print("  flash-attn installation failed")
+            all_success = False
+
     # o-voxel (local package in TRELLIS.2 repo)
     ovoxel_path = script_dir / "TRELLIS.2" / "o-voxel"
     if is_package_installed("o_voxel"):
