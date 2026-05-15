@@ -228,10 +228,8 @@ class Model3DService:
         except Exception as e:
             err = str(e)
             if "gated repo" in err or "403" in err or "restricted" in err:
-                logger.error("Failed to load TRELLIS pipeline: access denied to a gated HuggingFace model.")
-                logger.error("TRELLIS 2 requires access to a gated Meta model:")
-                logger.error("  - https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m")
-                logger.error("Request access, then set HF_TOKEN: export HF_TOKEN=hf_xxx")
+                logger.error(f"Failed to load TRELLIS pipeline: access denied — {e}")
+                logger.error("Set HF_TOKEN and ensure access is granted on HuggingFace.")
             else:
                 logger.error(f"Failed to load TRELLIS pipeline: {e}")
             self._is_loaded = False
