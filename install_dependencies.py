@@ -234,6 +234,19 @@ def install_trellis_extensions() -> bool:
         print("\n  ERROR: Cannot install CUDA extensions without CUDA_HOME!")
         return False
 
+    # Initialize TRELLIS.2 git submodules (e.g. o-voxel/third_party/eigen)
+    script_dir = Path(__file__).parent
+    trellis2_path = script_dir / "TRELLIS.2"
+    if (trellis2_path / ".git").exists() or (trellis2_path / ".gitmodules").exists():
+        print("\n  Initializing TRELLIS.2 submodules (third_party/eigen, ...)...")
+        result = subprocess.run(
+            ["git", "submodule", "update", "--init", "--recursive"],
+            cwd=str(trellis2_path),
+            capture_output=False,
+        )
+        if result.returncode != 0:
+            print("  Warning: git submodule update failed in TRELLIS.2 — o-voxel build may fail")
+
     all_success = True
 
     # nvdiffrast v0.4.0
@@ -265,7 +278,6 @@ def install_trellis_extensions() -> bool:
         all_success = False
 
     # o-voxel (local package in TRELLIS.2 repo)
-    script_dir = Path(__file__).parent
     ovoxel_path = script_dir / "TRELLIS.2" / "o-voxel"
     if is_package_installed("o_voxel"):
         print("\n  Skipping o-voxel (already installed)")
