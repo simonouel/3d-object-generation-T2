@@ -153,12 +153,15 @@ Focus only on suggesting appropriate objects for the scene based on the user's r
     def _get_prompt_generation_rules(self) -> str:
         """Get rules for 2D prompt generation phase."""
         return f"""You are now in 2D prompt generation mode. Your task is to create detailed prompts for each object in the scene.
-The descriptions should be highly detailed and visually rich, suitable for a text-to-image generation model.
+CRITICAL: Every prompt must show the object as a COMPLETE, FREESTANDING 3D item with visible depth and volume, \
+viewed from a three-quarter angle. NEVER generate texture crops, flat surface patterns, or close-up details — \
+always show the entire object as a solid physical thing you could hold or walk around.
+For surface/material objects (stone wall, cobblestone path, etc.) always frame them as a SINGLE BLOCK or TILE \
+sitting on its own — e.g. 'a single cobblestone tile as a 3D block', 'a stone wall section as a freestanding slab'.
 IMPORTANT: Every prompt MUST include photorealistic style keywords such as 'photorealistic', 'product photography', \
 'studio lighting', 'physically based rendering', 'high detail', 'sharp focus'. \
 The goal is a clean 3D-render-style reference image, NOT an illustration or cartoon.
 The prompt must specify a plain white background: 'isolated on a white background'.
-Focus ONLY on the physical and visual characteristics of each object itself.
 Keep each object's prompt to exactly {config.TWO_D_PROMPT_LENGTH} words or less for optimal generation quality.
 Generate a separate prompt for each object in the scene.
 Format each object's prompt with 'Object:' and 'Prompt:' labels.
@@ -166,13 +169,15 @@ Do not add any explanatory notes or comments after the prompt.
 Do not use asterisks or any special formatting characters.
 Output only the Object and Prompt labels with clean text - no additional formatting or notes.
 
-The prompt text should describe the object's visual characteristics in detail.
 Example:
-Object: Beach Chair
-Prompt: Photorealistic beach chair with ergonomic wooden frame and striped canvas, product photography, studio lighting, isolated on a white background
+Object: Stone Wall
+Prompt: Photorealistic stone wall section as a freestanding 3D slab, full object visible, three-quarter view, product photography, studio lighting, isolated on a white background
 Example:
-Object: Fire Hydrant
-Prompt: Photorealistic red cast iron fire hydrant with chrome valves and bolts, physically based rendering, sharp focus, isolated on a white background"""
+Object: Iron Chain
+Prompt: Photorealistic iron chain coiled as a single complete object, full chain visible, product photography, studio lighting, isolated on a white background
+Example:
+Object: Wooden Barrel
+Prompt: Photorealistic oak wooden barrel with iron bands, full object three-quarter view, product photography, studio lighting, isolated on a white background"""
     
     def _load_model(self):
         """Load the native PyTorch LLM model (supports full precision and GPTQ INT4 quantized models)."""

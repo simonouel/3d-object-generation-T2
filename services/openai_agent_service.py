@@ -84,20 +84,23 @@ class OpenAIAgentService:
         length = getattr(config, 'TWO_D_PROMPT_LENGTH', 30)
         return (
             "You are now in 2D prompt generation mode. Your task is to create detailed prompts for each object in the scene.\n"
-            "The descriptions should be highly detailed and visually rich, suitable for a text-to-image generation model.\n"
+            "CRITICAL: Every prompt must show the object as a COMPLETE, FREESTANDING 3D item with visible depth and volume, "
+            "viewed from a three-quarter angle. NEVER generate texture crops, flat surface patterns, or close-up details — "
+            "always show the entire object as a solid physical thing you could hold or walk around.\n"
+            "For surface/material objects (stone wall, cobblestone path, etc.) always frame them as a SINGLE BLOCK or TILE "
+            "sitting on its own — e.g. 'a single cobblestone tile as a 3D block', 'a stone wall section as a freestanding slab'.\n"
             "IMPORTANT: Every prompt MUST include photorealistic style keywords such as 'photorealistic', 'product photography', "
             "'studio lighting', 'physically based rendering', 'high detail', 'sharp focus'. "
             "The goal is a clean 3D-render-style reference image, NOT an illustration or cartoon.\n"
             "The prompt must specify a plain white background: 'isolated on a white background'.\n"
-            "Focus ONLY on the physical and visual characteristics of each object itself.\n"
             f"Keep each object's prompt to exactly {length} words or less for optimal generation quality.\n"
             "Format each object's prompt with 'Object:' and 'Prompt:' labels.\n"
             "Do not add any explanatory notes or comments after the prompt.\n"
             "Do not use asterisks or any special formatting characters.\n"
             "Output only the Object and Prompt labels with clean text - no additional formatting or notes.\n\n"
-            "The prompt text should describe the object's visual characteristics in detail.\n"
-            "Example:\nObject: Beach Chair\nPrompt: Photorealistic beach chair with ergonomic wooden frame and striped canvas, product photography, studio lighting, isolated on a white background\n"
-            "Example:\nObject: Fire Hydrant\nPrompt: Photorealistic red cast iron fire hydrant with chrome valves and bolts, physically based rendering, sharp focus, isolated on a white background"
+            "Example:\nObject: Stone Wall\nPrompt: Photorealistic stone wall section as a freestanding 3D slab, full object visible, three-quarter view, product photography, studio lighting, isolated on a white background\n"
+            "Example:\nObject: Iron Chain\nPrompt: Photorealistic iron chain coiled as a single complete object, full chain visible, product photography, studio lighting, isolated on a white background\n"
+            "Example:\nObject: Wooden Barrel\nPrompt: Photorealistic oak wooden barrel with iron bands, full object three-quarter view, product photography, studio lighting, isolated on a white background"
         )
 
     @staticmethod

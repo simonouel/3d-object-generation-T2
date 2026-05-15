@@ -315,7 +315,7 @@ class Model3DService:
                 aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
                 decimation_target=100000,
                 texture_size=1024,
-                remesh=False,
+                remesh=True,
                 verbose=VERBOSE,
             )
             logger.info(f"  GLB built in {time.time() - export_start:.1f}s — saving...")
