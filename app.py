@@ -1415,14 +1415,6 @@ def create_app():
                 </div>
                 """
         
-        def show_3d_status_single():
-            """Show status message for single 3D generation."""
-            status_html = create_3d_status_html("Generating 3D model (~50 sec)...", is_generating=True)
-            return gr.update(value=status_html, visible=True)
-        
-        def hide_3d_status():
-            """Hide the 3D status message."""
-            return gr.update(value="", visible=False)
         
         def batch_convert_3d_with_status(gallery_data):
             """Generator: Convert all objects to 3D with inline status updates.
@@ -1449,17 +1441,26 @@ def create_app():
                 return
             
             # Use the generator version
+            batch_start = time.time()
+            item_start = time.time()
             for current, total_count, object_name, updated_data, is_complete, was_cancelled in convert_all_with_progress(gallery_data, None):
                 card_updates = shift_card_ui(updated_data)
-                
+
                 if is_complete:
+                    total_elapsed = time.time() - batch_start
                     if was_cancelled:
-                        status_html = create_3d_status_html(f"❌ Cancelled after {current}/{total_count} objects.")
+                        status_html = create_3d_status_html(f"❌ Cancelled after {current}/{total_count} objects ({total_elapsed:.0f}s).")
                     else:
-                        status_html = create_3d_status_html(f"✅ All {total_count} objects converted to 3D!")
+                        status_html = create_3d_status_html(f"✅ All {total_count} objects converted in {total_elapsed:.0f}s!")
+                    yield [updated_data, gr.update(value=status_html, visible=True)] + card_updates
+                elif current == 0:
+                    item_start = time.time()
+                    status_html = create_3d_status_html(f"Generating 3D: {object_name} (1/{total_count})", is_generating=True)
                     yield [updated_data, gr.update(value=status_html, visible=True)] + card_updates
                 else:
-                    status_html = create_3d_status_html(f"Generating 3D: {object_name} ({current + 1}/{total_count}) ~50 sec each", is_generating=True)
+                    elapsed = time.time() - item_start
+                    item_start = time.time()
+                    status_html = create_3d_status_html(f"Generating 3D: {object_name} ({current}/{total_count}) — last: {elapsed:.0f}s", is_generating=True)
                     yield [updated_data, gr.update(value=status_html, visible=True)] + card_updates
         
         # Wire up 3D generation button events for each card
@@ -1482,16 +1483,18 @@ def create_app():
                         print(f"DEBUG: Card index {card_idx} out of range")
                         return gallery_data
                 
-                def perform_3d_generation(gallery_data):
+                def perform_3d_generation_with_timing(gallery_data):
+                    start = time.time()
+                    yield gr.update(value=create_3d_status_html("Generating 3D model...", is_generating=True), visible=True), gallery_data
+
                     print(f"DEBUG: Performing actual 3D generation for card {card_idx}")
                     result = three_d_handler(card_idx, gallery_data)
-                    
-                    # Re-enable all buttons after 3D generation completes (success or failure)
                     result = enable_all_buttons_after_3d_generation(result)
-                    
-                    return result
-                
-                return generate_3d_for_card, perform_3d_generation
+
+                    elapsed = time.time() - start
+                    yield gr.update(value=create_3d_status_html(f"✅ Done in {elapsed:.0f}s"), visible=True), result
+
+                return generate_3d_for_card, perform_3d_generation_with_timing
             
             # Create the functions for this specific card
             immediate_update_fn, generation_fn = create_3d_function(idx)
@@ -1510,17 +1513,9 @@ def create_app():
                 inputs=[gallery_components["data"]],
                 outputs=[start_over_btn]
             ).then(
-                fn=show_3d_status_single,                # Show status message
-                inputs=[],
-                outputs=[three_d_status_message]
-            ).then(
                 fn=generation_fn,
                 inputs=[gallery_components["data"]],
-                outputs=[gallery_components["data"]]
-            ).then(
-                fn=hide_3d_status,                       # Hide status after generation
-                inputs=[],
-                outputs=[three_d_status_message]
+                outputs=[three_d_status_message, gallery_components["data"]]
             ).then(
                 fn=gallery_components["shift_card_ui"],
                 inputs=[gallery_components["data"]],
