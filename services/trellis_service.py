@@ -299,6 +299,7 @@ class Model3DService:
             
             # Export GLB
             export_start = time.time()
+            logger.info("  Exporting GLB (decimation + texture bake)...")
             glb = o_voxel.postprocess.to_glb(
                 vertices=mesh.vertices,
                 faces=mesh.faces,
@@ -307,13 +308,12 @@ class Model3DService:
                 attr_layout=mesh.layout,
                 voxel_size=mesh.voxel_size,
                 aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
-                decimation_target=1000000,
+                decimation_target=200000,
                 texture_size=1024,
-                remesh=True,
-                remesh_band=1,
-                remesh_project=0,
+                remesh=False,
                 verbose=VERBOSE,
             )
+            logger.info(f"  GLB built in {time.time() - export_start:.1f}s — saving...")
             glb.export(glb_path)
             
             if VERBOSE:
