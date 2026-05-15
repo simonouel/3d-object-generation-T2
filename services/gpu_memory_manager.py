@@ -352,25 +352,33 @@ class GPUMemoryManager:
             logger.info("[2/3] SANA: Skipped (service not registered)")
         
         # Step 3: Load LLM (stays on GPU for chat)
-        if self.llm_service and config.USE_NATIVE_LLM:
+        use_openai = getattr(config, 'USE_OPENAI_COMPATIBLE_LLM', False)
+        if self.llm_service and config.USE_NATIVE_LLM and not use_openai:
             try:
                 logger.info("\n[3/3] Loading LLM model...")
                 llm_start = time.time()
-                
+
                 # Load the agent and model
                 if hasattr(self.llm_service, '_ensure_agent_loaded'):
                     # Create agent wrapper first (without loading model)
                     self.llm_service._ensure_agent_loaded(load_model=False)
                     # Now load the model (this is where the actual GPU memory is used)
-                    if hasattr(self.llm_service.agent, 'ensure_model_loaded'):
+                    if hasattr(self.llm_service, 'agent') and hasattr(self.llm_service.agent, 'ensure_model_loaded'):
                         self.llm_service.agent.ensure_model_loaded()
-                    status["llm_loaded"] = self.llm_service.agent is not None and self.llm_service.agent.is_loaded
-                
+                    status["llm_loaded"] = (
+                        hasattr(self.llm_service, 'agent')
+                        and self.llm_service.agent is not None
+                        and self.llm_service.agent.is_loaded
+                    )
+
                 logger.info(f"  LLM loaded in {time.time() - llm_start:.2f}s")
                 if VERBOSE:
                     log_gpu_memory("  After LLM (on GPU) - ")
             except Exception as e:
                 logger.error(f"  Failed to load LLM: {e}")
+        elif use_openai:
+            logger.info("[3/3] LLM: Using remote OpenAI-compatible endpoint — no local model to load")
+            status["llm_loaded"] = True
         else:
             logger.info("[3/3] LLM: Skipped (USE_NATIVE_LLM=False or service not registered)")
         
