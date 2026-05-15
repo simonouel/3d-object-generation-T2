@@ -282,21 +282,26 @@ class Model3DService:
             mesh_list = self.pipeline.run(image, seed=1)
             mesh = mesh_list[0]
             mesh.simplify(16777216)
-            
+
+            # Free inference outputs before export — CuMesh needs contiguous VRAM
+            del mesh_list
+            gc.collect()
+            clear_gpu_cache()
+
             run_time = time.time() - run_start
-            
+
             if VERBOSE:
                 vram_after = log_gpu_memory("After inference - ")
                 logger.info(f">>> Inference completed in {run_time:.2f} seconds")
                 if vram_after:
                     logger.info(f">>> Peak VRAM: {vram_after['reserved_gb']:.2f} GB")
-            
+
             # Generate filename based on original image name
             image_name = Path(image_path).stem
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             glb_filename = f"{image_name}_{timestamp}.glb"
             glb_path = os.path.join(output_dir, glb_filename)
-            
+
             # Export GLB
             export_start = time.time()
             logger.info("  Exporting GLB (decimation + texture bake)...")
@@ -308,7 +313,7 @@ class Model3DService:
                 attr_layout=mesh.layout,
                 voxel_size=mesh.voxel_size,
                 aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
-                decimation_target=200000,
+                decimation_target=100000,
                 texture_size=1024,
                 remesh=False,
                 verbose=VERBOSE,
@@ -322,8 +327,7 @@ class Model3DService:
             logger.info(f"Saved 3D model to: {glb_path}")
             
             # Clear intermediate tensors to free memory - aggressive cleanup
-            del mesh_list, mesh
-            del glb
+            del mesh, glb
             gc.collect()  # Force garbage collection
             clear_gpu_cache()
             
