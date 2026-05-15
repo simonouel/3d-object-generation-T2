@@ -163,8 +163,9 @@ class Model3DService:
         if self._imports_done:
             return
             
-        global Trellis2ImageTo3DPipeline, o_voxel
+        global Trellis2ImageTo3DPipeline, BiRefNet, o_voxel
         from trellis2.pipelines import Trellis2ImageTo3DPipeline
+        from trellis2.pipelines.rembg import BiRefNet
         import o_voxel
         
         self._imports_done = True
@@ -201,6 +202,11 @@ class Model3DService:
             # Load pipeline from HuggingFace
             logger.info(f"Loading TRELLIS 2 model: {self.model_name}")
             self.pipeline = Trellis2ImageTo3DPipeline.from_pretrained(self.model_name)
+
+            # Replace briaai/RMBG-2.0 (non-commercial) with ZhengPeng7/BiRefNet (MIT)
+            logger.info("Swapping rembg backend to ZhengPeng7/BiRefNet (MIT license)")
+            self.pipeline.rembg_model = BiRefNet("ZhengPeng7/BiRefNet")
+
             self.pipeline.cuda()
             
             self._load_time = time.time() - load_start
@@ -220,7 +226,14 @@ class Model3DService:
             self._is_loaded = False
             return False
         except Exception as e:
-            logger.error(f"Failed to load TRELLIS pipeline: {e}")
+            err = str(e)
+            if "gated repo" in err or "403" in err or "restricted" in err:
+                logger.error("Failed to load TRELLIS pipeline: access denied to a gated HuggingFace model.")
+                logger.error("TRELLIS 2 requires access to a gated Meta model:")
+                logger.error("  - https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m")
+                logger.error("Request access, then set HF_TOKEN: export HF_TOKEN=hf_xxx")
+            else:
+                logger.error(f"Failed to load TRELLIS pipeline: {e}")
             self._is_loaded = False
             return False
     

@@ -419,7 +419,8 @@ VERBOSE = False                        # Detailed timing/memory logs
 
    TRELLIS 2 requires access to a gated Meta model:
    - Visit **https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m** and click **Request Access**
-   - Once approved (usually instant), set your token and re-run:
+
+   Once approved, set your token and re-run:
      ```bash
      # Linux
      export HF_TOKEN=hf_xxx

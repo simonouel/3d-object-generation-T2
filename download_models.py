@@ -136,11 +136,44 @@ def download_native_llm_model():
         return False
 
 
+TRELLIS_GATED_DEPS = [
+    "facebook/dinov3-vitl16-pretrain-lvd1689m",
+]
+
+
+def check_trellis_gated_deps() -> bool:
+    """Verify access to gated HuggingFace models required by TRELLIS 2."""
+    from huggingface_hub import model_info
+    all_ok = True
+    for repo_id in TRELLIS_GATED_DEPS:
+        if is_model_cached(repo_id):
+            logger.info(f"✓ {repo_id} already downloaded — skipping")
+            continue
+        try:
+            model_info(repo_id)  # raises if no access
+            logger.info(f"✓ Access confirmed: {repo_id}")
+        except Exception as e:
+            err = str(e)
+            if "403" in err or "gated" in err or "restricted" in err:
+                logger.error(f"✗ Access denied: {repo_id}")
+                logger.error(f"  TRELLIS 2 requires this gated model.")
+                logger.error(f"  1. Request access at: https://huggingface.co/{repo_id}")
+                logger.error(f"  2. Set HF_TOKEN: export HF_TOKEN=hf_xxx")
+                all_ok = False
+            else:
+                logger.warning(f"  Could not verify {repo_id}: {e}")
+    return all_ok
+
+
 def download_native_trellis_model():
     """Download the native TRELLIS 3D generation model."""
     if not config.USE_NATIVE_TRELLIS:
         logger.info("Skipping native TRELLIS download (USE_NATIVE_TRELLIS = False)")
         return True
+
+    if not check_trellis_gated_deps():
+        logger.error("✗ Cannot download TRELLIS: missing access to required gated models (see above).")
+        return False
 
     if is_model_cached(config.NATIVE_TRELLIS_MODEL):
         logger.info(f"✓ TRELLIS model {config.NATIVE_TRELLIS_MODEL} already downloaded — skipping")
@@ -171,7 +204,12 @@ def download_native_trellis_model():
         logger.warning("  The model will be downloaded when first used.")
         return True  # Not a fatal error
     except Exception as e:
-        logger.error(f"✗ Error downloading TRELLIS model: {e}")
+        err = str(e)
+        if "403" in err or "gated" in err or "restricted" in err:
+            logger.error(f"✗ Access denied downloading TRELLIS model.")
+            logger.error(f"  Request access and set HF_TOKEN (see above).")
+        else:
+            logger.error(f"✗ Error downloading TRELLIS model: {e}")
         return False
 
 
