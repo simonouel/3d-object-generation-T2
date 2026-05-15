@@ -151,7 +151,7 @@ CSS_DIR = STATIC_DIR / "css"
 JS_DIR = STATIC_DIR / "js"
 IMAGES_DIR = STATIC_DIR / "images"
 ASSETS_APP_DIR = BASE_DIR / "assets"
-GENERATED_IMAGES_DIR = ASSETS_APP_DIR / "images"
+GENERATED_IMAGES_DIR = ASSETS_DIR / "images"  # co-located with GLBs on the network share
 MODELS_DIR = ASSETS_APP_DIR / "models"
 
 # Create application directories
