@@ -201,7 +201,7 @@ VRAM_THRESHOLD_LLM = 31  # if GPU has > VRAM_THRESHOLD_LLM, LLM Agent will not b
 IMAGE_FLUX_MODEL       = os.environ.get("IMAGE_FLUX_MODEL", "black-forest-labs/FLUX.1-dev")
 IMAGE_FLUX_TRANSFORMER = os.environ.get(
     "IMAGE_FLUX_TRANSFORMER",
-    "/mnt/data-003/ai/models/diffusion_models/Flux/flux2_dev_fp8mixed.safetensors",
+    "/mnt/data-003/ai/models/diffusion_models/Flux/flux-2-klein-9b-fp8.safetensors",
 )
 IMAGE_FLUX_VAE         = os.environ.get("IMAGE_FLUX_VAE", "/mnt/data-003/ai/models/vae/flux2-vae.safetensors")
 IMAGE_INFERENCE_STEPS  = int(os.environ.get("IMAGE_INFERENCE_STEPS", "20"))
