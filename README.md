@@ -358,6 +358,19 @@ OPENAI_COMPATIBLE_BASE_URL = "http://lx-gpu-001.vfx.priv:8000/v1"  # vLLM endpoi
 OPENAI_COMPATIBLE_MODEL = "default"    # "default" = auto-detect from /v1/models at startup
 
 # =============================================================================
+# Output Directory (network share support)
+# =============================================================================
+# Default: ~/.trellis/assets/  — override with env var TRELLIS_ASSETS_DIR
+# Set to a NFS/CIFS mount accessible by all Blender workstations so exported
+# GLB files land directly on the share without manual copy.
+#
+# Example (in systemd unit or shell):
+#   export TRELLIS_ASSETS_DIR=/mnt/nfs/3d-assets
+#
+# The server writes GLBs there; workstations mount the same share and point
+# the Asset Importer to their local mount path.
+
+# =============================================================================
 # Logging
 # =============================================================================
 VERBOSE = False                        # Detailed timing/memory logs

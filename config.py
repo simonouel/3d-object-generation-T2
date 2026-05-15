@@ -125,12 +125,14 @@ TRELLIS_CLEAR_CACHE_BETWEEN_IMAGES = True
 # Get the base directory of the project
 BASE_DIR = Path(__file__).parent
 
-# Use user's home directory for data storage
+# Use user's home directory for data storage (override with TRELLIS_ASSETS_DIR env var)
 HOME_DIR = Path.home()
 TRELLIS_DIR = HOME_DIR / ".trellis"  # Hidden directory
-ASSETS_DIR = TRELLIS_DIR / "assets"
+
+_assets_env = os.environ.get("TRELLIS_ASSETS_DIR", "")
+ASSETS_DIR = Path(_assets_env) if _assets_env else TRELLIS_DIR / "assets"
 PROMPTS_DIR = TRELLIS_DIR / "prompts"
-SCENE_DIR = TRELLIS_DIR / "scene"
+SCENE_DIR = ASSETS_DIR / "scene"
 
 # Create directories
 ASSETS_DIR.mkdir(parents=True, exist_ok=True)

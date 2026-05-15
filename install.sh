@@ -231,6 +231,7 @@ Environment="OPENCV_IO_ENABLE_OPENEXR=1"
 Environment="PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
 Environment="HF_TOKEN=${HF_TOKEN:-}"
 Environment="OPENAI_COMPATIBLE_BASE_URL=${OPENAI_URL:-}"
+Environment="TRELLIS_ASSETS_DIR=${TRELLIS_ASSETS_DIR:-}"
 ExecStart=$VENV_DIR/bin/python $REPO_DIR/app.py
 Restart=on-failure
 RestartSec=30
@@ -263,7 +264,8 @@ echo "    systemctl status  $SERVICE_NAME"
 echo "    systemctl restart $SERVICE_NAME"
 echo "    journalctl -u $SERVICE_NAME -f"
 echo ""
-echo "  To set HuggingFace token after install:"
+echo "  To set HuggingFace token or network assets dir after install:"
 echo "    sudo systemctl edit $SERVICE_NAME"
 echo "    # Add: Environment=\"HF_TOKEN=hf_xxx\""
+echo "    # Add: Environment=\"TRELLIS_ASSETS_DIR=/mnt/nfs/3d-assets\""
 echo ""
