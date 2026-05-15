@@ -273,7 +273,7 @@ def install_trellis_extensions() -> bool:
     # FlexGEMM
     if not install_cuda_extension_from_git(
         "FlexGEMM", "https://github.com/JeffreyXiang/FlexGEMM.git",
-        import_name="FlexGEMM", recursive=True,
+        import_name="flex_gemm", recursive=True,
     ):
         all_success = False
 
