@@ -1783,6 +1783,7 @@ if __name__ == "__main__":
             server_port=getattr(config, 'GRADIO_SERVER_PORT', 7860),
             share=False,
             quiet=False,
+            allowed_paths=[str(config.ASSETS_DIR)],
         )
         print("app Launched")
     except KeyboardInterrupt:
