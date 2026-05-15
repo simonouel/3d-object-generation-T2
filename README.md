@@ -394,28 +394,43 @@ VERBOSE = False                        # Detailed timing/memory logs
    - Ensure using Gradio 5.x (not 6.x)
    - Check `requirements.txt` has `gradio==5.50.0`
 
-4. **Model download fails**
+4. **Model download fails — gated model (403 Access Denied)**
+
+   TRELLIS 2 requires access to a gated Meta model:
+   - Visit **https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m** and click **Request Access**
+   - Once approved (usually instant), set your token and re-run:
+     ```bash
+     # Linux
+     export HF_TOKEN=hf_xxx
+     .venv/bin/python download_models.py
+
+     # or re-run the installer
+     sudo HF_TOKEN=hf_xxx bash install.sh
+     ```
+   - Windows: `set HF_TOKEN=your_token` then `python download_models.py`
+
+5. **Model download fails — other**
    - Set HuggingFace token:
      - Linux: `sudo HF_TOKEN=hf_xxx bash install.sh`
      - Windows: `set HF_TOKEN=your_token`
    - Check internet connection
 
-5. **TRELLIS 2 import errors**
+6. **TRELLIS 2 import errors**
    - Ensure the `TRELLIS.2` directory is present at the root of the project (cloned from `https://github.com/microsoft/TRELLIS.2`)
    - Ensure TRELLIS 2 dependencies are installed: `python install_dependencies.py`
    - Verify the `trellis2` module is importable: `python -c "from trellis2.pipelines import Trellis2ImageTo3DPipeline"`
 
-6. **OpenAI-compatible LLM endpoint not reachable**
+7. **OpenAI-compatible LLM endpoint not reachable**
    - Verify the endpoint is running: `curl http://<host>:8000/v1/models`
    - Check `OPENAI_COMPATIBLE_BASE_URL` in `config.py`
    - On Linux, check the systemd environment override: `systemctl cat 3d-object-generation`
 
-7. **Installation Issues (Windows)**:
+8. **Installation Issues (Windows)**:
    - Run PowerShell as Administrator
    - Check if Python is in your system PATH
    - Verify Visual Studio Build Tools installation
 
-8. **Service not starting (Linux)**:
+9. **Service not starting (Linux)**:
    ```bash
    journalctl -u 3d-object-generation -n 50
    ```
