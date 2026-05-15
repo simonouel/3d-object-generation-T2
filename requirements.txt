@@ -3,7 +3,7 @@
 # =============================================================================
 transformers==4.57.3
 diffusers==0.36.0
-pynvml==13.0.1
+nvidia-ml-py>=12.535.77
 python-dotenv==1.2.1
 # WARNING: Do NOT upgrade to Gradio 6.x - it has CUDA threading issues that cause
 # extremely slow GPU inference (~0.02 tok/s instead of ~22 tok/s). Gradio 5.x works correctly.

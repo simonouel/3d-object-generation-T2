@@ -146,6 +146,9 @@ info "Installing Python dependencies..."
     "$PIP" install -r "$REPO_DIR/requirements-trellis.txt" || \
     warn "requirements-trellis.txt not found — skipping"
 
+# Remove deprecated pynvml if present (replaced by nvidia-ml-py, same API)
+"$PIP" uninstall -y pynvml 2>/dev/null && info "Removed deprecated pynvml package" || true
+
 log "Python dependencies installed"
 
 # --- Apply LLM backend config ------------------------------------------------
