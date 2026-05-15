@@ -30,6 +30,7 @@ import gc
 import sys
 from pathlib import Path
 
+from huggingface_hub import scan_cache_dir
 from diffusers import SanaSprintPipeline
 from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 import logging
@@ -41,12 +42,29 @@ logger = logging.getLogger(__name__)
 import config
 
 
+def is_model_cached(repo_id: str) -> bool:
+    """Return True if the model is already fully downloaded in the HF cache."""
+    try:
+        cache_info = scan_cache_dir()
+        for repo in cache_info.repos:
+            if repo.repo_id == repo_id:
+                return True
+        return False
+    except Exception as e:
+        logger.debug(f"Cache scan failed for {repo_id}: {e}")
+        return False
+
+
 def download_sana_model():
     """Download the Sana Sprint image generation model."""
+    repo_id = "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers"
+    if is_model_cached(repo_id):
+        logger.info(f"✓ Sana Sprint model already downloaded — skipping")
+        return True
     logger.info("Downloading Sana Sprint model...")
     try:
         sana_model = SanaSprintPipeline.from_pretrained(
-            "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+            repo_id,
             torch_dtype=torch.bfloat16
         )
         del sana_model
@@ -61,9 +79,13 @@ def download_sana_model():
 
 def download_guardrail_model():
     """Download the NSFW Prompt Detector guardrail model."""
+    repo_id = "ezb/NSFW-Prompt-Detector"
+    if is_model_cached(repo_id):
+        logger.info(f"✓ NSFW Prompt Detector already downloaded — skipping")
+        return True
     logger.info("Downloading NSFW Prompt Detector model...")
     try:
-        guardrail_pipe = pipeline("text-classification", model="ezb/NSFW-Prompt-Detector")
+        guardrail_pipe = pipeline("text-classification", model=repo_id)
         del guardrail_pipe
         gc.collect()
         torch.cuda.empty_cache()
@@ -82,19 +104,23 @@ def download_native_llm_model():
     if not config.USE_NATIVE_LLM:
         logger.info("Skipping native LLM download (USE_NATIVE_LLM = False)")
         return True
-    
+
+    if is_model_cached(config.NATIVE_LLM_MODEL):
+        logger.info(f"✓ LLM model {config.NATIVE_LLM_MODEL} already downloaded — skipping")
+        return True
+
     logger.info(f"Downloading native LLM model: {config.NATIVE_LLM_MODEL}...")
     try:
         # Download tokenizer
         logger.info("  Downloading tokenizer...")
         tokenizer = AutoTokenizer.from_pretrained(config.NATIVE_LLM_MODEL)
         del tokenizer
-        
+
         # Download model weights (don't load to GPU, just cache)
         logger.info("  Downloading model weights (this may take a while)...")
         model = AutoModelForCausalLM.from_pretrained(
             config.NATIVE_LLM_MODEL,
-            device_map="cpu",  # Download to CPU only
+            device_map="cpu",
             torch_dtype=torch.float16,
         )
         del model
@@ -115,7 +141,11 @@ def download_native_trellis_model():
     if not config.USE_NATIVE_TRELLIS:
         logger.info("Skipping native TRELLIS download (USE_NATIVE_TRELLIS = False)")
         return True
-    
+
+    if is_model_cached(config.NATIVE_TRELLIS_MODEL):
+        logger.info(f"✓ TRELLIS model {config.NATIVE_TRELLIS_MODEL} already downloaded — skipping")
+        return True
+
     # Need to add TRELLIS.2 to sys.path so trellis2 module is importable
     trellis2_path = str(Path(__file__).parent / "TRELLIS.2")
     if trellis2_path not in sys.path:
