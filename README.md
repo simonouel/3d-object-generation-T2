@@ -218,7 +218,9 @@ The **3D Object Generation** add-on launches and manages all services directly f
    - Windows: `E:\3d-object-generation-T2`
 6. <img width="983" height="537" alt="image" src="https://github.com/user-attachments/assets/55cb9cc8-3493-4b19-a139-14572e254c9a" />
 
-> **Linux note:** The add-on automatically detects `.venv/bin/python` inside the Blueprint Base Path — no Conda or manual Python path configuration needed. The **Conda Python Path** field in preferences can be left blank.
+> **Linux note:** The add-on automatically detects `.venv/bin/python` inside the Blueprint Base Path — no Conda or manual Python path configuration needed. The **Python Path** field in preferences can be left blank.
+
+> **Remote server note:** If Blender runs on a different workstation than the GPU server, set **Server URL** in the add-on preferences to the server's address (e.g. `http://lx-gpu-001.vfx.priv:7860`). The Blueprint Base Path should point to the repo either via a network share (NFS/CIFS) or a local copy — it is used to launch and check services. Multiple workstations can connect simultaneously; the server listens on all interfaces (`0.0.0.0`) by default.
 
 ### Starting Services
 

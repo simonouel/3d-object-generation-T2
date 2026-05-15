@@ -293,10 +293,20 @@ def get_services_status(python_path):
         logger.debug(f"Failed to check services: {str(e)}")
         return "NOT READY", "NOT READY"
 
+def get_server_url() -> str:
+    """Return the configured server URL, stripped of trailing slash."""
+    try:
+        prefs = bpy.context.preferences.addons[__name__].preferences
+        url = prefs.server_url.strip().rstrip('/')
+        return url if url else "http://127.0.0.1:7860"
+    except Exception:
+        return "http://127.0.0.1:7860"
+
+
 def check_gradio_service():
     """Check Gradio service status using urllib."""
     try:
-        req = urllib.request.Request('http://127.0.0.1:7860/', method='HEAD')
+        req = urllib.request.Request(get_server_url() + '/', method='HEAD')
         with urllib.request.urlopen(req, timeout=5) as response:
             logger.debug(f"Gradio HTTP response code: {response.code}")
             if response.code == 200 or response.code == 302:
@@ -339,15 +349,21 @@ class TrellisAddonPreferences(AddonPreferences):
 
     base_path: StringProperty(
         name="Blueprint Base Path",
-        description="Base path for 3D object generation project (e.g., C:\\path\\to\\chat-to-3d)",
+        description="Base path for 3D object generation project (e.g., /mnt/server/3d-object-generation-T2)",
         default=os.environ.get("CHAT_TO_3D_PATH", ""),
         subtype='DIR_PATH'
     )
 
+    server_url: StringProperty(
+        name="Server URL",
+        description="URL of the 3D Object Generation server. Change when Blender runs on a different machine than the server (e.g. http://lx-gpu-001.vfx.priv:7860)",
+        default="http://127.0.0.1:7860"
+    )
+
     python_path: StringProperty(
-        name="Conda Python Path",
+        name="Python Path (optional)",
         subtype='FILE_PATH',
-        description="Path to the Python executable in the trellis Conda environment"
+        description="Path to the Python executable. Leave blank to auto-detect (.venv or Conda)."
     )
 
     console_log_level: EnumProperty(
@@ -364,6 +380,7 @@ class TrellisAddonPreferences(AddonPreferences):
     def draw(self, context):
         layout = self.layout
         layout.prop(self, "base_path")
+        layout.prop(self, "server_url")
         layout.prop(self, "python_path")
         layout.prop(self, "console_log_level")
 
@@ -653,7 +670,7 @@ class VIEW3D_PT_CHAT_TO_3D(Panel):
             "wm.url_open",
             text="Open 3D Object Generation UI",
             icon='URL'
-        ).url = "http://127.0.0.1:7860/?__theme=light"
+        ).url = get_server_url() + "/?__theme=light"
         button_row.enabled = (gradio_stat == "READY")
 
 def update_status_ui():

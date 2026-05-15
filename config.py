@@ -168,6 +168,15 @@ LLM_RANDOM_SEED_ENABLED = True  # Enable random seed for object generation
 TWO_D_PROMPT_LENGTH = 30
 
 # -----------------------------------------------------------------------------
+# Server Settings
+# -----------------------------------------------------------------------------
+# Bind address for the Gradio web UI.
+# Use "0.0.0.0" to accept connections from any machine on the network (server mode).
+# Use "127.0.0.1" to restrict to localhost only.
+GRADIO_SERVER_HOST = "0.0.0.0"
+GRADIO_SERVER_PORT = 7860
+
+# -----------------------------------------------------------------------------
 # UI Settings
 # -----------------------------------------------------------------------------
 NUM_OF_OBJECTS = 20

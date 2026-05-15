@@ -1721,7 +1721,13 @@ if __name__ == "__main__":
         print("Starting app creation")
         app = create_app()
         print("app created, launching app...")
-        app.launch(debug=True, server_name="127.0.0.1", server_port=7860, share=False, quiet=False)
+        app.launch(
+            debug=True,
+            server_name=getattr(config, 'GRADIO_SERVER_HOST', '0.0.0.0'),
+            server_port=getattr(config, 'GRADIO_SERVER_PORT', 7860),
+            share=False,
+            quiet=False,
+        )
         print("app Launched")
     except KeyboardInterrupt:
         print("\nKeyboard interrupt received...")
