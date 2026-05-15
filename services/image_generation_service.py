@@ -57,18 +57,18 @@ class ImageGenerationService:
         """Move SANA pipeline to specified device (GPU or CPU)."""
         try:
             if self.sana_pipeline is None:
-                logger.warning("SANA pipeline is not loaded")
+                logger.warning("image pipeline is not loaded")
                 return False
             
-            logger.info(f"Moving SANA pipeline to {device}")
+            logger.info(f"Moving image pipeline to {device}")
 
             if self.device == device:
-                logger.info(f"SANA pipeline is already on {device}")
+                logger.info(f"image pipeline is already on {device}")
             else:
                 # Move pipeline to specified device
                 self.sana_pipeline.to(device)
                 self.device = device
-                logger.info(f"Successfully moved SANA pipeline to {device}")
+                logger.info(f"Successfully moved image pipeline to {device}")
             
             # Note: Guardrail model always stays on CPU (small model, fast enough on CPU)
             # This avoids device movement issues and saves GPU memory
@@ -88,7 +88,7 @@ class ImageGenerationService:
             return True
             
         except Exception as e:
-            logger.error(f"Error moving SANA pipeline to {device}: {e}")
+            logger.error(f"Error moving image pipeline to {device}: {e}")
             return False
     
     def move_sana_pipeline_to_gpu(self):
@@ -106,7 +106,7 @@ class ImageGenerationService:
         The model will need to be reloaded before next use.
         """
         if self.sana_pipeline is not None:
-            logger.info("Unloading SANA pipeline completely...")
+            logger.info("Unloading image pipeline...")
             del self.sana_pipeline
             self.sana_pipeline = None
             self.is_loaded = False
@@ -117,20 +117,20 @@ class ImageGenerationService:
             
             # Clear memory
             self._clear_gpu_memory()
-            logger.info("SANA pipeline unloaded")
+            logger.info("image pipeline unloaded")
             return True
         return False
     
     def load_sana_model(self, device="cuda:0", force_reload=False):
         """Load the SANA model for image generation with optimizations."""
         try:
-            print(f"Timestamp before load_sana_model: {time.time()}")
+            print(f"Timestamp before load_image_model: {time.time()}")
             if self.is_loaded and self.sana_pipeline is not None and not force_reload:
-                logger.info("SANA model already loaded")
+                logger.info("image model already loaded")
                 self.move_sana_pipeline_to_device(device)
                 return True
             
-            print(f"Timestamp after load_sana_model: {time.time()}")
+            print(f"Timestamp after load_image_model: {time.time()}")
             # Clear GPU memory before loading
             self._clear_gpu_memory() 
             print(f"Timestamp after clear_gpu_memory: {time.time()}")
@@ -147,23 +147,23 @@ class ImageGenerationService:
                 self.sana_pipeline.scheduler.config,
                 timestep_spacing="trailing",
             )
-            print(f"Timestamp after load_sana_model: {time.time()}")
-            print(f"Time taken to load SANA model: {time.time() - initial_time} seconds")
+            print(f"Timestamp after load_image_model: {time.time()}")
+            print(f"Time taken to load image model: {time.time() - initial_time} seconds")
             
             initial_time = time.time()
             # Move to GPU with memory optimization
             self.move_sana_pipeline_to_device("cuda:0")
             
-            print(f"Time taken to move SANA model to GPU: {time.time() - initial_time} seconds")
-            print(f"Timestamp after move_sana_model_to_gpu: {time.time()}")
+            print(f"Time taken to move image model to GPU: {time.time() - initial_time} seconds")
+            print(f"Timestamp after move_image_model_to_gpu: {time.time()}")
         
             self.is_loaded = True
-            logger.info("Successfully loaded SANA model")   
+            logger.info("Successfully loaded image model")   
             
             return True
             
         except Exception as e:
-            logger.error(f"Error loading SANA model: {e}")
+            logger.error(f"Error loading image model: {e}")
             self.is_loaded = False
             self.sana_pipeline = None
             return False
@@ -189,7 +189,7 @@ class ImageGenerationService:
                 self.device = None
 
                 self._clear_gpu_memory()
-                logger.info("Successfully cleaned up SANA pipeline")
+                logger.info("Successfully cleaned up image pipeline")
             except Exception as e:
                 logger.error(f"Error during cleanup: {e}")
 

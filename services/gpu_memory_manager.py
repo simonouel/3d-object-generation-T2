@@ -85,7 +85,7 @@ class GPUMemoryManager:
     def register_sana_service(self, service):
         """Register the SANA image generation service."""
         self.sana_service = service
-        logger.info("GPUMemoryManager: SANA service registered")
+        logger.info("GPUMemoryManager: image generation service registered")
         
     def register_trellis_service(self, service):
         """Register the TRELLIS 3D generation service."""
@@ -152,7 +152,7 @@ class GPUMemoryManager:
         
         # Move SANA to CPU if loaded  
         if self.sana_service and self.sana_service.is_loaded:
-            logger.info("  Moving SANA to CPU...")
+            logger.info("  Moving image pipeline to CPU...")
             self.sana_service.move_sana_pipeline_to_cpu()
         
         # Ensure LLM is on GPU
@@ -178,7 +178,7 @@ class GPUMemoryManager:
             return  # Already ready
             
         start_time = time.time()
-        logger.info("GPUMemoryManager: Preparing GPU for SANA image generation...")
+        logger.info("GPUMemoryManager: Preparing GPU for image generation...")
         
         if VERBOSE:
             log_gpu_memory("Before SANA prep - ")
@@ -200,14 +200,14 @@ class GPUMemoryManager:
         
         # Move SANA to GPU
         if self.sana_service:
-            logger.info("  Moving SANA to GPU...")
+            logger.info("  Moving image pipeline to GPU...")
             self.sana_service.move_sana_pipeline_to_gpu()
         
         self._current_gpu_model = 'sana'
         
         if VERBOSE:
             log_gpu_memory("After SANA prep - ")
-            logger.info(f"GPUMemoryManager: SANA prep complete in {time.time() - start_time:.2f}s")
+            logger.info(f"GPUMemoryManager: image pipeline prep complete in {time.time() - start_time:.2f}s")
     
     def prepare_for_trellis(self):
         """Prepare GPU for TRELLIS 3D generation.
@@ -227,13 +227,13 @@ class GPUMemoryManager:
                        self.sana_service.device == "cuda:0")
         
         if self._current_gpu_model == 'trellis' and not sana_on_gpu:
-            logger.info("GPUMemoryManager: TRELLIS already on GPU, SANA not loaded - skipping prep")
+            logger.info("GPUMemoryManager: TRELLIS already on GPU, image pipeline not loaded - skipping prep")
             return  # Already ready
             
         start_time = time.time()
         
         if sana_on_gpu:
-            logger.info("GPUMemoryManager: SANA detected on GPU - will unload before TRELLIS prep")
+            logger.info("GPUMemoryManager: image pipeline detected on GPU - will unload before TRELLIS prep")
         
         logger.info("GPUMemoryManager: Preparing GPU for TRELLIS 3D generation...")
         
@@ -250,7 +250,7 @@ class GPUMemoryManager:
         # COMPLETELY UNLOAD SANA to free reserved GPU memory
         # Moving to CPU is not enough - PyTorch keeps reserved memory from previous operations
         if self.sana_service and self.sana_service.is_loaded:
-            logger.info("  Unloading SANA completely to free GPU reserved memory...")
+            logger.info("  Unloading image pipeline to free GPU reserved memory...")
             self.sana_service.unload_sana_model()
         
         self._clear_gpu_cache()
@@ -330,7 +330,7 @@ class GPUMemoryManager:
         # Step 2: Load SANA (image generation, ~5GB)
         if self.sana_service:
             try:
-                logger.info("\n[2/3] Loading SANA model...")
+                logger.info("\n[2/3] Loading image generation model...")
                 sana_start = time.time()
                 
                 # Load the model
@@ -339,17 +339,17 @@ class GPUMemoryManager:
                 
                 # Move to CPU to free GPU for LLM
                 if status["sana_loaded"]:
-                    logger.info("  Moving SANA to CPU...")
+                    logger.info("  Moving image pipeline to CPU...")
                     self.sana_service.move_sana_pipeline_to_cpu()
                     self._clear_gpu_cache()
                 
-                logger.info(f"  SANA loaded in {time.time() - sana_start:.2f}s")
+                logger.info(f"  image model loaded in {time.time() - sana_start:.2f}s")
                 if VERBOSE:
                     log_gpu_memory("  After SANA - ")
             except Exception as e:
-                logger.error(f"  Failed to load SANA: {e}")
+                logger.error(f"  Failed to load image model: {e}")
         else:
-            logger.info("[2/3] SANA: Skipped (service not registered)")
+            logger.info("[2/3] image model: Skipped (service not registered)")
         
         # Step 3: Load LLM (stays on GPU for chat)
         use_openai = getattr(config, 'USE_OPENAI_COMPATIBLE_LLM', False)
@@ -389,7 +389,7 @@ class GPUMemoryManager:
         logger.info("\n" + "=" * 60)
         logger.info("PRE-LOADING COMPLETE")
         logger.info(f"  TRELLIS: {'✓ Loaded (on CPU)' if status['trellis_loaded'] else '✗ Not loaded'}")
-        logger.info(f"  SANA: {'✓ Loaded (on CPU)' if status['sana_loaded'] else '✗ Not loaded'}")
+        logger.info(f"  image model: {'✓ Loaded (on CPU)' if status['sana_loaded'] else '✗ Not loaded'}")
         logger.info(f"  LLM: {'✓ Loaded (on GPU)' if status['llm_loaded'] else '✗ Not loaded'}")
         logger.info(f"  Total time: {status['total_time']:.2f}s")
         logger.info("=" * 60)
