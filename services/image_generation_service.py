@@ -15,14 +15,14 @@
 # limitations under the License.
 #
 
-"""Image generation service using RealVisXL Lightning (SDXL)."""
+"""Image generation service using FLUX.2 Klein 4B."""
 
 import os
 import logging
 import datetime
 import torch
 import gc
-from diffusers import FluxPipeline, FluxTransformer2DModel, AutoencoderKL
+from diffusers import Flux2Pipeline
 import time
 import config
 from services.guardrail_service import GuardrailService
@@ -38,7 +38,7 @@ class ImageGenerationService:
     def __init__(self):
         self.sana_pipeline = None
         self.is_loaded = False
-        self.model_path = config.IMAGE_MODEL_PATH
+        self.model_path = config.IMAGE_FLUX2_REPO
         self.device = None
         self.guardrail_service = GuardrailService()
         
@@ -124,53 +124,34 @@ class ImageGenerationService:
     def load_sana_model(self, device="cuda:0", force_reload=False):
         """Load the SANA model for image generation with optimizations."""
         try:
-            print(f"Timestamp before load_image_model: {time.time()}")
             if self.is_loaded and self.sana_pipeline is not None and not force_reload:
                 logger.info("image model already loaded")
                 self.move_sana_pipeline_to_device(device)
                 return True
-            
-            print(f"Timestamp after load_image_model: {time.time()}")
+
             # Clear GPU memory before loading
-            self._clear_gpu_memory() 
-            print(f"Timestamp after clear_gpu_memory: {time.time()}")
-            
-            logger.info(f"Loading FLUX pipeline — transformer: {config.IMAGE_FLUX_TRANSFORMER}")
+            self._clear_gpu_memory()
+
+            repo = config.IMAGE_FLUX2_REPO
+            logger.info(f"Loading Flux 2 pipeline from HF repo: {repo}")
+            initial_time = time.time()
+            self.sana_pipeline = Flux2Pipeline.from_pretrained(
+                repo,
+                torch_dtype=torch.bfloat16,
+            )
+            logger.info(f"Image model loaded in {time.time() - initial_time:.2f}s")
 
             initial_time = time.time()
-            # Load pipeline with text encoders from HF (CLIP-L + T5-XXL, cached after first run)
-            # transformer=None / vae=None skips downloading those heavy components from HF
-            self.sana_pipeline = FluxPipeline.from_pretrained(
-                config.IMAGE_FLUX_MODEL,
-                transformer=None,
-                vae=None,
-                torch_dtype=torch.bfloat16,
-            )
-            # Load transformer from local fp8 file
-            self.sana_pipeline.transformer = FluxTransformer2DModel.from_single_file(
-                config.IMAGE_FLUX_TRANSFORMER,
-                torch_dtype=torch.bfloat16,
-            )
-            # Load VAE from local file
-            self.sana_pipeline.vae = AutoencoderKL.from_single_file(
-                config.IMAGE_FLUX_VAE,
-                torch_dtype=torch.bfloat16,
-            )
-            print(f"Timestamp after load_image_model: {time.time()}")
-            print(f"Time taken to load image model: {time.time() - initial_time} seconds")
-            
-            initial_time = time.time()
             # Move to GPU with memory optimization
-            self.move_sana_pipeline_to_device("cuda:0")
-            
-            print(f"Time taken to move image model to GPU: {time.time() - initial_time} seconds")
-            print(f"Timestamp after move_image_model_to_gpu: {time.time()}")
-        
+            self.move_sana_pipeline_to_device(device)
+
+            logger.info(f"Image model moved to GPU in {time.time() - initial_time:.2f}s")
+
             self.is_loaded = True
-            logger.info("Successfully loaded image model")   
-            
+            logger.info("Successfully loaded image model")
+
             return True
-            
+
         except Exception as e:
             logger.error(f"Error loading image model: {e}")
             self.is_loaded = False
@@ -238,7 +219,6 @@ class ImageGenerationService:
                     prompt=prompt,
                     num_inference_steps=config.IMAGE_INFERENCE_STEPS,
                     guidance_scale=config.IMAGE_GUIDANCE_SCALE,
-                    max_sequence_length=256,
                     height=1024,
                     width=1024,
                     generator=generator,

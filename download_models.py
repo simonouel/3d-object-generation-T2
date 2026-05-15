@@ -23,8 +23,8 @@ This script downloads:
 - Native LLM model (if USE_NATIVE_LLM = True)
 - Native TRELLIS model (if USE_NATIVE_TRELLIS = True)
 
-Note: Image generation uses a local safetensors file (RealVisXL Lightning) —
-no download needed. See config.IMAGE_MODEL_PATH.
+Note: Image generation uses FLUX.2 Klein 4B downloaded from HuggingFace
+(~10 GB). Set HF_TOKEN if the repo requires authentication.
 """
 
 import torch
@@ -57,14 +57,27 @@ def is_model_cached(repo_id: str) -> bool:
 
 
 def download_sana_model():
-    """Verify the local image generation model file exists (no download needed)."""
-    model_path = Path(config.IMAGE_MODEL_PATH)
-    if model_path.exists():
-        logger.info(f"✓ Image generation model found: {model_path}")
+    """Download Flux 2 Klein 4B from HuggingFace (skips if already cached)."""
+    import os
+    repo_id = config.IMAGE_FLUX2_REPO
+    if is_model_cached(repo_id):
+        logger.info(f"✓ Flux 2 image model already cached: {repo_id}")
         return True
-    logger.error(f"✗ Image generation model not found: {model_path}")
-    logger.error("  Set IMAGE_MODEL_PATH env var to a valid .safetensors file.")
-    return False
+    logger.info(f"Downloading Flux 2 image model: {repo_id} (~10GB, may take several minutes)...")
+    try:
+        from huggingface_hub import snapshot_download
+        snapshot_download(
+            repo_id=repo_id,
+            token=os.environ.get("HF_TOKEN"),
+        )
+        logger.info(f"✓ Flux 2 image model downloaded: {repo_id}")
+        return True
+    except Exception as e:
+        logger.error(f"✗ Failed to download {repo_id}: {e}")
+        if "403" in str(e) or "gated" in str(e).lower() or "restricted" in str(e).lower():
+            logger.error(f"  Repo may be gated. Request access at: https://huggingface.co/{repo_id}")
+            logger.error(f"  Then set HF_TOKEN: export HF_TOKEN=hf_xxx")
+        return False
 
 
 def download_guardrail_model():

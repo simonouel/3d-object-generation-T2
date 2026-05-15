@@ -196,18 +196,11 @@ VRAM_THRESHOLD_DISABLE_IMAGE_GEN_DURING_3D_GENERATION = 16  # Disable image gen 
 VRAM_THRESHOLD_LLM = 31  # if GPU has > VRAM_THRESHOLD_LLM, LLM Agent will not be stopped
 
 # -----------------------------------------------------------------------------
-# Image Generation Model (FLUX.1-schnell — local transformer + VAE, text encoders from HF)
+# Image Generation Model (FLUX.2 Klein 4B — HuggingFace, step-distilled)
 # -----------------------------------------------------------------------------
-IMAGE_FLUX_MODEL       = os.environ.get("IMAGE_FLUX_MODEL", "black-forest-labs/FLUX.1-dev")
-IMAGE_FLUX_TRANSFORMER = os.environ.get(
-    "IMAGE_FLUX_TRANSFORMER",
-    "/mnt/data-003/ai/models/diffusion_models/Flux/flux-2-klein-9b-fp8.safetensors",
-)
-IMAGE_FLUX_VAE         = os.environ.get("IMAGE_FLUX_VAE", "/mnt/data-003/ai/models/vae/flux2-vae.safetensors")
-IMAGE_INFERENCE_STEPS  = int(os.environ.get("IMAGE_INFERENCE_STEPS", "20"))
+IMAGE_FLUX2_REPO       = os.environ.get("IMAGE_FLUX2_REPO", "black-forest-labs/FLUX.2-klein-4B")
+IMAGE_INFERENCE_STEPS  = int(os.environ.get("IMAGE_INFERENCE_STEPS", "4"))   # Klein = 4 steps
 IMAGE_GUIDANCE_SCALE   = float(os.environ.get("IMAGE_GUIDANCE_SCALE", "3.5"))
-# Keep for download_models.py reference check
-IMAGE_MODEL_PATH       = IMAGE_FLUX_TRANSFORMER
 
 # -----------------------------------------------------------------------------
 # Model Defaults
