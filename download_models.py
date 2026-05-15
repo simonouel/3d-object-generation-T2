@@ -76,6 +76,9 @@ def download_guardrail_model():
 
 def download_native_llm_model():
     """Download the native LLM model for text generation."""
+    if getattr(config, 'USE_OPENAI_COMPATIBLE_LLM', False):
+        logger.info("Skipping native LLM download (USE_OPENAI_COMPATIBLE_LLM = True, using remote endpoint)")
+        return True
     if not config.USE_NATIVE_LLM:
         logger.info("Skipping native LLM download (USE_NATIVE_LLM = False)")
         return True
@@ -147,10 +150,15 @@ def download_models():
     logger.info("=" * 60)
     logger.info("Starting model downloads...")
     logger.info("=" * 60)
+    use_openai = getattr(config, 'USE_OPENAI_COMPATIBLE_LLM', False)
     logger.info(f"Configuration:")
+    logger.info(f"  USE_OPENAI_COMPATIBLE_LLM: {use_openai}")
     logger.info(f"  USE_NATIVE_LLM: {config.USE_NATIVE_LLM}")
     logger.info(f"  USE_NATIVE_TRELLIS: {config.USE_NATIVE_TRELLIS}")
-    if config.USE_NATIVE_LLM:
+    if use_openai:
+        logger.info(f"  OPENAI_COMPATIBLE_BASE_URL: {getattr(config, 'OPENAI_COMPATIBLE_BASE_URL', '?')}")
+        logger.info(f"  OPENAI_COMPATIBLE_MODEL: {getattr(config, 'OPENAI_COMPATIBLE_MODEL', 'default')} (auto-detected at startup)")
+    elif config.USE_NATIVE_LLM:
         logger.info(f"  NATIVE_LLM_MODEL: {config.NATIVE_LLM_MODEL}")
     if config.USE_NATIVE_TRELLIS:
         logger.info(f"  NATIVE_TRELLIS_MODEL: {config.NATIVE_TRELLIS_MODEL}")
