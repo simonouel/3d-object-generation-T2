@@ -138,15 +138,22 @@ The setup script will automatically:
 
 ---
 
-### Install Blender (Windows)
+### Install Blender
 
-This blueprint requires Blender 4.2+ for the add-on integration. You can download and install manually from:
-- [Blender 4.2.7 LTS](https://www.blender.org/download/release/Blender4.2/blender-4.2.7-windows-x64.msi)
+Both platforms require Blender **4.2 or higher** (tested with 5.1.1).
 
-Or via winget:
+**Linux (EL9.4+):**
+```bash
+# Download from blender.org and extract
+wget https://www.blender.org/download/release/Blender5.1/blender-5.1.1-linux-x64.tar.xz
+tar -xf blender-5.1.1-linux-x64.tar.xz -C ~/apps/
 ```
-winget install --id 9NW1B444LDLW
-```
+
+Or install via your distro's package manager if a recent enough version is available.
+
+**Windows:**
+- [Blender 5.1.1](https://www.blender.org/download/) (recommended)
+- Or via winget: `winget install --id 9NW1B444LDLW`
 
 > **Note:** Blender can be installed before or after the main setup. The installation script will automatically copy the add-ons to your Blender installation.
 
@@ -198,7 +205,7 @@ Both methods launch the same Gradio web interface. **If you're working in Blende
 
 ## Usage - Blender Add-on (Recommended)
 
-The **3D Object Generation** add-on launches and manages all services directly from Blender.
+The **3D Object Generation** add-on launches and manages all services directly from Blender. Compatible with Blender 4.2+ and 5.1.1 on both Windows and Linux.
 
 ### Initial Setup
 
@@ -206,8 +213,12 @@ The **3D Object Generation** add-on launches and manages all services directly f
 2. Go to **Edit → Preferences → Add-ons**
 3. <img width="996" height="384" alt="image" src="https://github.com/user-attachments/assets/a858877d-d182-44f2-bcc9-72f47358070c" />
 4. Enable **3D Object Generation** and **Asset Importer** by checking the boxes
-5. Expand the 3D Object Generation add-on and set **Blueprint Base Path** to your installation directory (e.g., `E:\3d-object-generation`)
+5. Expand the **3D Object Generation** add-on and set **Blueprint Base Path** to your installation directory:
+   - Linux: `/mnt/localize/ai/3d-object-generation-T2` (wherever you cloned the repo)
+   - Windows: `E:\3d-object-generation-T2`
 6. <img width="983" height="537" alt="image" src="https://github.com/user-attachments/assets/55cb9cc8-3493-4b19-a139-14572e254c9a" />
+
+> **Linux note:** The add-on automatically detects `.venv/bin/python` inside the Blueprint Base Path — no Conda or manual Python path configuration needed. The **Conda Python Path** field in preferences can be left blank.
 
 ### Starting Services
 
@@ -221,6 +232,8 @@ The **3D Object Generation** add-on launches and manages all services directly f
 
 To stop services and free GPU memory, click **Services Started .. Click to Terminate**.
 
+> **Linux note:** The systemd service (`3d-object-generation`) and the Blender add-on both launch `app.py`. Use one or the other — not both at the same time — to avoid port conflicts on 7860.
+
 ---
 
 ## Usage - Standalone (Alternative)
@@ -229,23 +242,35 @@ If you prefer to run the application outside of Blender:
 
 ### Starting the Application
 
-1. Open a new terminal and run:
+**Linux (managed by systemd — recommended):**
+```bash
+systemctl start 3d-object-generation
+journalctl -u 3d-object-generation -f   # follow logs
+```
+
+**Linux (manual):**
+```bash
+cd /path/to/3d-object-generation-T2
+.venv/bin/python app.py
+```
+
+**Windows:**
 ```
 conda activate 3dwithtrellis
-cd C:\3d-object-generation
-
+cd C:\3d-object-generation-T2
 python app.py
 ```
 
-2. Open your browser to the URL shown in the terminal (typically http://127.0.0.1:7860/)
+Open your browser to the URL shown in the terminal (typically `http://127.0.0.1:7860/`)
 
-**💡 Recommended**: For the best experience, use the light theme by accessing the application with: `http://127.0.0.1:7860/?__theme=light`
+**Recommended**: For the best experience, use the light theme: `http://127.0.0.1:7860/?__theme=light`
 
-**⚠️ Important Note**: Browser refresh is not supported and may cause the application to crash. In that case, please restart the application instead.
+**Important**: Browser refresh is not supported and may cause the application to crash. Restart the application instead.
 
 ### Stopping the Application
 
-To stop the application and free VRAM, simply press `Ctrl+C` in the terminal where the application is running.
+- **Linux systemd:** `systemctl stop 3d-object-generation`
+- **Linux manual / Windows:** `Ctrl+C` in the terminal
 
 ---
 
